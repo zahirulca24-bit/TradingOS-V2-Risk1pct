@@ -1,0 +1,48 @@
+# TradingOS: never commit exchange credentials or private configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Python environments and caches
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Frontend generated artifacts
+node_modules/
+dist/
+
+# Snapshots and logs
+backend/*snapshot.json
+backend/*.json.tmp
+*.log
+
+# Local backups, phase packages, and update state
+*.bak*
+*.before-*
+*.backup-*
+phase1_backups/
+TradingOS_V2_*.zip
+update_reports/
+
+# Runtime state and databases
+backend/pipeline_state/
+pipeline_state/
+database/*.db
+database/*.db-shm
+database/*.db-wal
+*.zip
+*.sqlite3
+*.db
+*.db-shm
+*.db-wal
+
+# Temp and system files
+scratch/
+.system_generated/
+.DS_Store
+Thumbs.db
+
