@@ -1,3 +1,4 @@
+import { API_ROOT } from "./api";
 import React, { useState, useEffect } from "react";
 import {
   BookOpen, ShieldCheck, FileBarChart, Download,
@@ -85,7 +86,7 @@ interface DailyReportItem {
   disclosure: string;
 }
 
-const API_BASE = "http://127.0.0.1:8765";
+const API_BASE = API_ROOT;
 
 export default function TradeJournalPage({
   initialTab = "signals"
