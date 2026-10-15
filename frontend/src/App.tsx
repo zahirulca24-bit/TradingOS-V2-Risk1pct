@@ -1,6 +1,9 @@
 import SignalResultsPage from "./SignalResultsPage";
 import Phase3Dashboard from "./Phase3Dashboard";
 import TradeJournalPage from "./TradeJournalPage";
+import StrategyBuilderPage from "./StrategyBuilderPage";
+import BotManagerPage from "./BotManagerPage";
+import DemoTradingPage from "./DemoTradingPage";
 import { useEffect as useBackendEffect, useState as useBackendState } from "react";
 
 import ScannerPage from "./OpportunityScannerPage";
@@ -531,20 +534,6 @@ export function TradingTerminal() {
   );
 }
 
-function Strategy() {
-  return (
-    <div className="page-content">
-      <PageHeading eyebrow="MODULAR TRADING LOGIC" title="Strategy Builder" description="Add trend, support/resistance, indicators and entry rules one module at a time." />
-      <div className="feature-grid">
-        <section className="panel feature-panel"><Activity size={22} /><h2>Trend Logic</h2><p>Define swing highs/lows, HH, HL, LH and LL detection.</p><span className="status-label">NOT CONFIGURED</span></section>
-        <section className="panel feature-panel"><Blocks size={22} /><h2>Support & Resistance</h2><p>Define zones, retests, breakouts and invalidation rules.</p><span className="status-label">NOT CONFIGURED</span></section>
-        <section className="panel feature-panel"><ChartCandlestick size={22} /><h2>Indicator Rules</h2><p>Use RSI, Volume, EMA and custom indicator conditions.</p><span className="status-label">NOT CONFIGURED</span></section>
-      </div>
-      <div className="info-note"><ShieldCheck size={17} /> A visual indicator does not automatically become a bot trading rule. You must explicitly add it to a strategy.</div>
-    </div>
-  );
-}
-
 function SimplePage({
   eyebrow, title, description, emptyTitle, emptyDescription, icon
 }: {
@@ -569,8 +558,10 @@ function PageHeading({ eyebrow, title, description }: { eyebrow: string; title: 
 
 function AppLayout() {
 
-  // Track the real Python backend status
+  // Track the real Python backend status and operational diagnostics
   const [backendOnline, setBackendOnline] = useBackendState(false);
+  const [operationalStatus, setOperationalStatus] = useBackendState<string | null>(null);
+  const [operationalWarning, setOperationalWarning] = useBackendState<string | null>(null);
 
   useBackendEffect(() => {
     let active = true;
@@ -589,11 +580,44 @@ function AppLayout() {
         const data = await response.json();
 
         if (active) {
-          setBackendOnline(data.status === "online");
+          const isOnline = data.status === "online";
+          setBackendOnline(isOnline);
+
+          if (isOnline) {
+            try {
+              const opResp = await fetch(
+                "http://127.0.0.1:8765/health/operational",
+                { cache: "no-store" }
+              );
+              if (opResp.ok) {
+                const opData = await opResp.json();
+                if (active) {
+                  const ovr = (opData.overall_status as string) || "HEALTHY";
+                  setOperationalStatus(ovr);
+                  const freshness = opData.scanner?.freshness;
+                  const scheduler = opData.scanner?.scheduler_status;
+                  if (freshness === "STALE") {
+                    setOperationalWarning("STALE SCAN");
+                  } else if (scheduler && scheduler !== "RUNNING") {
+                    setOperationalWarning(`SCANNER ${scheduler}`);
+                  } else {
+                    setOperationalWarning(null);
+                  }
+                }
+              }
+            } catch {
+              // Non-fatal if operational sub-endpoint fails
+            }
+          } else {
+            setOperationalStatus(null);
+            setOperationalWarning(null);
+          }
         }
       } catch {
         if (active) {
           setBackendOnline(false);
+          setOperationalStatus(null);
+          setOperationalWarning(null);
         }
       }
     }
@@ -643,7 +667,25 @@ function AppLayout() {
         <header className="topbar">
           <div className="breadcrumb"><span>Workspace</span><ChevronRight size={15} /><strong>{activePage?.name ?? "Dashboard"}</strong></div>
           <div className="topbar-actions">
-            <span className={`header-status ${backendOnline ? "system-is-online" : "system-is-offline"}`} role="status"><span className="system-light" aria-hidden="true" /> {backendOnline ? "SYSTEM ONLINE" : "SYSTEM OFFLINE"}</span>
+            <span
+              className={`header-status ${
+                !backendOnline
+                  ? "system-is-offline"
+                  : operationalStatus === "DEGRADED"
+                  ? "system-is-degraded"
+                  : "system-is-online"
+              }`}
+              role="status"
+            >
+              <span className="system-light" aria-hidden="true" />
+              {!backendOnline
+                ? "SYSTEM OFFLINE"
+                : operationalStatus === "DEGRADED" && operationalWarning
+                ? `SYSTEM DEGRADED (${operationalWarning})`
+                : operationalStatus === "DEGRADED"
+                ? "SYSTEM DEGRADED"
+                : "SYSTEM ONLINE"}
+            </span>
             <span className="top-divider" />
             <Bell size={18} />
             <div className="avatar">T</div>
@@ -655,9 +697,9 @@ function AppLayout() {
             <Route path="/scanner" element={<ScannerPage />} />
             <Route path="/signals" element={<SignalResultsPage />} />
             <Route path="/terminal" element={<TradingTerminalPage />} />
-            <Route path="/strategy" element={<Strategy />} />
-            <Route path="/bots" element={<SimplePage eyebrow="AUTOMATION" title="Bot Manager" description="Create, assign and control automated demo trading bots." emptyTitle="No bots configured" emptyDescription="Bot configuration, lifecycle controls and risk limits will be added after the strategy engine." icon={Bot} />} />
-            <Route path="/demo" element={<SimplePage eyebrow="BYBIT INTEGRATION" title="Demo Trading" description="Demo balance, orders, open positions and execution status." emptyTitle="Bybit Demo not connected" emptyDescription="Demo API is read-only on Dashboard. No order execution enabled." icon={Wallet} />} />
+            <Route path="/strategy" element={<StrategyBuilderPage />} />
+            <Route path="/bots" element={<BotManagerPage />} />
+            <Route path="/demo" element={<DemoTradingPage />} />
             <Route path="/journal" element={<TradeJournalPage initialTab="signals" />} />
             <Route path="/reports" element={<TradeJournalPage initialTab="reports" />} />
             <Route path="/replay" element={<SimplePage eyebrow="HISTORICAL VERIFICATION" title="Replay Lab" description="Check whether your bot detects market structure correctly on historical data." emptyTitle="Replay engine not connected" emptyDescription="Replay will reveal candles step by step without letting strategy logic see future data." icon={Clock3} />} />

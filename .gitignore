@@ -4,21 +4,29 @@
 !.env.example
 *.pem
 *.key
+*.p12
+*.pfx
 
 # Python environments and caches
 .venv/
+venv/
 __pycache__/
+*.pyc
 *.py[cod]
 .pytest_cache/
 
 # Frontend generated artifacts
 node_modules/
 dist/
+build/
+coverage/
 
 # Snapshots and logs
 backend/*snapshot.json
 backend/*.json.tmp
 *.log
+*.pid
+*.lock
 
 # Local backups, phase packages, and update state
 *.bak*
@@ -32,17 +40,20 @@ update_reports/
 backend/pipeline_state/
 pipeline_state/
 database/*.db
-database/*.db-shm
-database/*.db-wal
+database/*.db-*
+database/*.sqlite*
 *.zip
 *.sqlite3
 *.db
 *.db-shm
 *.db-wal
 
-# Temp and system files
+# Temp, IDE and system files
 scratch/
 .system_generated/
 .DS_Store
 Thumbs.db
-
+.vscode/
+.idea/
+.antigravity/
+.gemini/

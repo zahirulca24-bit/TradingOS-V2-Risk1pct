@@ -551,6 +551,10 @@ body,
   color: #4ade80;
 }
 
+.header-status.system-is-degraded {
+  color: #fbbf24;
+}
+
 .header-status.system-is-offline {
   color: #f87171;
 }
@@ -568,6 +572,11 @@ body,
   background: #22c55e;
   box-shadow: 0 0 8px #22c55e88;
   animation: tradingos-status-pulse 2s ease-in-out infinite;
+}
+
+.system-is-degraded .system-light {
+  background: #f59e0b;
+  box-shadow: 0 0 6px #f59e0b88;
 }
 
 .system-is-offline .system-light {
