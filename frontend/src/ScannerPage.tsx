@@ -1,3 +1,4 @@
+import { API_ROOT } from "./api";
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { RefreshCw, Database, ArrowUpRight } from "lucide-react";
@@ -26,7 +27,7 @@ type ScannerResponse = {
   markets: Market[];
 };
 
-const API = "http://127.0.0.1:8765";
+const API = API_ROOT;
 
 const tfLabels: Record<string, string> = {
   "15": "15m",
