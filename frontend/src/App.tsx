@@ -1,3 +1,4 @@
+﻿import LoginPage from "./LoginPage";
 import SignalResultsPage from "./SignalResultsPage";
 import Phase3Dashboard from "./Phase3Dashboard";
 import TradeJournalPage from "./TradeJournalPage";
@@ -9,7 +10,7 @@ import { apiUrl } from "./api";
 
 import ScannerPage from "./OpportunityScannerPage";
 import TradingTerminalPage from "./TradingTerminalPage";
-import { BrowserRouter, NavLink, Routes, Route, useLocation } from "react-router-dom";
+import { BrowserRouter, NavLink, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, Search, Radio, ChartCandlestick, Blocks,
   Bot, Wallet, BookOpen, FileBarChart, Play, Settings,
@@ -480,14 +481,14 @@ export function Scanner() {
     <div className="page-content">
       <PageHeading eyebrow="MARKET INTELLIGENCE" title="Market Scanner" description="Detect market structure, volume conditions and potential setups across selected symbols." />
       <section className="panel">
-        <div className="panel-header"><div><h2>Market Overview</h2><p>15-minute timeframe · Bybit market data integration pending</p></div><span className="subtle-tag">3 SYMBOLS</span></div>
+        <div className="panel-header"><div><h2>Market Overview</h2><p>15-minute timeframe Â· Bybit market data integration pending</p></div><span className="subtle-tag">3 SYMBOLS</span></div>
         <div className="table-scroll">
           <table className="market-table">
             <thead><tr><th>SYMBOL</th><th>PRICE</th><th>24H CHANGE</th><th>TREND</th><th>VOLUME</th><th>SETUP</th><th>STATUS</th></tr></thead>
             <tbody>{markets.map((symbol) => (
               <tr key={symbol}>
                 <td className="symbol-cell"><span className="symbol-dot" />{symbol}</td>
-                <td>—</td><td>—</td><td>—</td><td>—</td><td>—</td>
+                <td>â€”</td><td>â€”</td><td>â€”</td><td>â€”</td><td>â€”</td>
                 <td><span className="status-label">NOT CONNECTED</span></td>
               </tr>
             ))}</tbody>
@@ -520,14 +521,14 @@ export function TradingTerminal() {
       <div className="terminal-grid">
         <section className="panel chart-panel">
           <div className="panel-header">
-            <div><h2>BTCUSDT <span className="small-muted">· 15m</span></h2><p>Bybit market chart</p></div>
+            <div><h2>BTCUSDT <span className="small-muted">Â· 15m</span></h2><p>Bybit market chart</p></div>
             <span className="subtle-tag">CHART ENGINE NEXT</span>
           </div>
           <EmptyState title="Chart integration is next" description="The next step connects actual Bybit candles using TradingView Lightweight Charts, with RSI, Volume and indicator controls." icon={ChartCandlestick} />
         </section>
         <aside className="panel watchlist-panel">
           <div className="panel-header"><div><h2>Watchlist</h2><p>Bybit Perpetual</p></div></div>
-          {markets.map((symbol) => <div className="watchlist-row" key={symbol}><strong>{symbol}</strong><span>—</span></div>)}
+          {markets.map((symbol) => <div className="watchlist-row" key={symbol}><strong>{symbol}</strong><span>â€”</span></div>)}
           <p className="watchlist-footnote">Real prices will load after market-data integration.</p>
         </aside>
       </div>
@@ -660,7 +661,7 @@ function AppLayout() {
 
         <div className="sidebar-footer">
           <span className="mode-tag"><span className="grey-dot" /> DEMO MODE</span>
-          <p>Read-only Demo · account status on Dashboard</p>
+          <p>Read-only Demo Â· account status on Dashboard</p>
         </div>
       </aside>
 
@@ -689,7 +690,33 @@ function AppLayout() {
             </span>
             <span className="top-divider" />
             <Bell size={18} />
-            <div className="avatar">T</div>
+            <button
+  type="button"
+  aria-label="TradingOS Logout"
+  onClick={async () => {
+    try {
+      const response = await fetch(apiUrl("/auth/logout"), {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Logout failed");
+      window.location.assign("/login");
+    } catch {
+      alert("Logout failed. Please check your local backend.");
+    }
+  }}
+  style={{
+    border: "1px solid #334155",
+    background: "#111827",
+    color: "#f8fafc",
+    padding: "8px 14px",
+    borderRadius: "8px",
+    cursor: "pointer"
+  }}
+>
+  Logout
+</button>
+<div className="avatar">T</div>
           </div>
         </header>
         <main className="main-content">
@@ -713,6 +740,62 @@ function AppLayout() {
   );
 }
 
+function ProtectedShell() {
+  const [authenticated, setAuthenticated] =
+    useBackendState<boolean | null>(null);
+
+  useBackendEffect(() => {
+    let active = true;
+
+    fetch(apiUrl("/auth/session"), {
+      credentials: "include",
+      cache: "no-store"
+    })
+      .then(async (response) => {
+        if (!response.ok) return false;
+        const data = await response.json();
+        return data.authenticated === true;
+      })
+      .then((result) => {
+        if (active) setAuthenticated(result);
+      })
+      .catch(() => {
+        if (active) setAuthenticated(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  if (authenticated === null) {
+    return (
+      <div style={{
+        minHeight: "100vh",
+        display: "grid",
+        placeItems: "center",
+        background: "#080b10",
+        color: "#cbd5e1"
+      }}>
+        Checking TradingOS session...
+      </div>
+    );
+  }
+
+  if (!authenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  return <AppLayout />;
+}
+
 export default function App() {
-  return <BrowserRouter><AppLayout /></BrowserRouter>;
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/*" element={<ProtectedShell />} />
+      </Routes>
+    </BrowserRouter>
+  );
 }
