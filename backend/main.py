@@ -1,4 +1,5 @@
-﻿import os
+import os
+import hmac
 from pathlib import Path
 import sys
 
@@ -50,24 +51,17 @@ async def prevent_anonymous_cloud_data_access(request: Request, call_next):
                 elif custom_header:
                     provided_token = custom_header.strip()
 
-                if not provided_token or provided_token != configured_token.strip():
+                if not provided_token or not hmac.compare_digest(provided_token, configured_token.strip()):
                     return JSONResponse(
                         status_code=401,
                         content={"detail": "Unauthorized: valid authentication token required"},
                     )
             else:
-                # 2. If token is not explicitly configured, permit the trusted Vercel frontend origin
-                origin = request.headers.get("origin", "").rstrip("/")
-                referer = request.headers.get("referer", "").rstrip("/")
-                is_trusted = any(
-                    origin == o.rstrip("/") or referer.startswith(o.rstrip("/"))
-                    for o in default_origins
+                # Never trust Origin or Referer as authentication: they are spoofable.
+                return JSONResponse(
+                    status_code=403,
+                    content={"detail": "Private TradingOS API disabled until server authentication is configured"},
                 )
-                if not is_trusted:
-                    return JSONResponse(
-                        status_code=403,
-                        content={"detail": "Private TradingOS API temporarily disabled on public cloud pending authentication"},
-                    )
 
     return await call_next(request)
 
@@ -180,8 +174,9 @@ app.include_router(demo_risk_router)
 from journal_api import router as journal_router
 app.include_router(journal_router)
 
-# Local Windows password login only; never expose this local session API on Render.
+
+# Windows-only local password login.
+# Never expose the local password file on Render.
 if os.environ.get("RENDER", "").lower() not in ("true", "1"):
     from local_login_api import router as local_login_router
     app.include_router(local_login_router)
-
