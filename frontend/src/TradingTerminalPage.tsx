@@ -1,3 +1,4 @@
+import { API_ROOT } from "./api";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
@@ -56,7 +57,7 @@ function confirmedStructure(candles: Candle[]): ChartMarker[] {
   return result;
 }
 
-const API = "http://127.0.0.1:8765";
+const API = API_ROOT;
 const SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT"];
 
 function calculateRSI(data: Candle[], period = 14) {
