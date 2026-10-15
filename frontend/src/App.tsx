@@ -1,3 +1,4 @@
+import { apiUrl } from "./api";
 import SignalResultsPage from "./SignalResultsPage";
 import Phase3Dashboard from "./Phase3Dashboard";
 import TradeJournalPage from "./TradeJournalPage";
@@ -151,7 +152,7 @@ export function Dashboard() {
 
     async function readJson<T>(path: string): Promise<T> {
       const response = await fetch(
-        `http://127.0.0.1:8765${path}`,
+        apiUrl(path),
         { cache: "no-store" }
       );
 
@@ -569,7 +570,7 @@ function AppLayout() {
     async function checkBackend() {
       try {
         const response = await fetch(
-          "http://127.0.0.1:8765/health",
+          apiUrl("/health"),
           { cache: "no-store" }
         );
 
@@ -586,7 +587,7 @@ function AppLayout() {
           if (isOnline) {
             try {
               const opResp = await fetch(
-                "http://127.0.0.1:8765/health/operational",
+                apiUrl("/health/operational"),
                 { cache: "no-store" }
               );
               if (opResp.ok) {
