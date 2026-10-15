@@ -69,7 +69,7 @@ async def prevent_anonymous_cloud_data_access(request: Request, call_next):
 app.add_middleware(
     CORSMiddleware,
     allow_origins=default_origins,
-    allow_credentials=False,
+    allow_credentials=True,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Authorization", "X-TradingOS-Auth", "Content-Type", "*"],
 )
@@ -173,3 +173,10 @@ app.include_router(demo_risk_router)
 # P6 Trade Journal & Daily Reports (Read-Only)
 from journal_api import router as journal_router
 app.include_router(journal_router)
+
+
+# Windows-only local password login.
+# Never expose the local password file on Render.
+if os.environ.get("RENDER", "").lower() not in ("true", "1"):
+    from local_login_api import router as local_login_router
+    app.include_router(local_login_router)

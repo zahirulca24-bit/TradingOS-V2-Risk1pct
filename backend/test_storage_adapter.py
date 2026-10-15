@@ -289,11 +289,10 @@ class TestStorageAdapter(unittest.TestCase):
                 req.headers = {'origin': 'https://untrusted-attacker.com'}
                 res = await prevent_anonymous_cloud_data_access(req, nxt)
                 self.assertEqual(res.status_code, 403)
-
-                # Trusted Vercel origin permitted
+                # Origin is not authentication; fail closed without a token.
                 req.headers = {'origin': 'https://trading-os-v2-risk1pct.vercel.app'}
                 res = await prevent_anonymous_cloud_data_access(req, nxt)
-                self.assertEqual(res, 'next_called')
+                self.assertEqual(res.status_code, 403)
 
             # 3. Cloud environment with token configured:
             # Unauthenticated request rejected (401)
