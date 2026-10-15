@@ -1,3 +1,4 @@
+import { apiUrl, API_ROOT } from "./api";
 import { useState, useEffect } from "react";
 import {
   Bot, ShieldCheck, Activity, Clock, WifiOff,
@@ -77,7 +78,7 @@ export default function BotManagerPage() {
 
     async function fetchOperationalHealth() {
       try {
-        const response = await fetch("http://127.0.0.1:8765/health/operational", {
+        const response = await fetch(apiUrl("/health/operational"), {
           cache: "no-store",
         });
 
@@ -163,7 +164,7 @@ export default function BotManagerPage() {
         <div className="panel" style={{ padding: "24px", marginBottom: "24px", borderColor: "#ef444444", background: "#100808" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "12px", color: "#f87171", fontWeight: 600, marginBottom: "8px" }}>
             <WifiOff size={20} />
-            Backend Unavailable (http://127.0.0.1:8765)
+            Backend Unavailable ({API_ROOT})
           </div>
           <p style={{ color: "#9299a3", fontSize: "13px", margin: 0, lineHeight: "1.6" }}>
             Unable to connect to the TradingOS backend API. Ensure the supervisor is active via
