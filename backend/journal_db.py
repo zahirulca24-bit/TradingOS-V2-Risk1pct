@@ -95,20 +95,20 @@ CREATE INDEX IF NOT EXISTS idx_dry_runs_evaluated ON journal_dry_runs(evaluated_
 """
 
 
-def get_db_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
-    target_path = Path(db_path) if db_path else DEFAULT_DB_PATH
-    target_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(target_path), timeout=30.0)
-    conn.row_factory = sqlite3.Row
-    return conn
+from db_adapter import (
+    get_db_connection,
+    get_active_engine,
+    init_db as init_adapter_db,
+    DEFAULT_SQLITE_PATH
+)
 
 
 def init_db(db_path: Optional[Path] = None, auto_backfill: bool = True) -> None:
-    """Initialize SQLite database tables and indexes safely."""
+    """Initialize database tables and indexes safely (PostgreSQL or SQLite)."""
+    engine = get_active_engine(db_path=db_path)
     target_path = Path(db_path) if db_path else DEFAULT_DB_PATH
-    is_new = not target_path.exists()
-    with get_db_connection(target_path) as conn:
-        conn.executescript(SCHEMA_SQL)
+    is_new = not target_path.exists() if engine == "sqlite" else False
+    init_adapter_db(db_path=db_path)
     if is_new and auto_backfill and not db_path:
         try:
             backfill_historical_cycles(db_path=target_path)

@@ -102,6 +102,13 @@ def publish(reports):
             atomic_json(BASE / filename, reports[key])
         except OSError as exc:
             print("WARNING: Legacy mirror could not update:", filename, type(exc).__name__)
+    # Persist in durable database (Neon PostgreSQL or SQLite pipeline_cycles table)
+    try:
+        from db_adapter import save_pipeline_cycle
+        save_pipeline_cycle(reports)
+    except Exception as exc:
+        print("WARNING: Durable database pipeline cycle storage failed:", type(exc).__name__, exc)
+
     try:
         from journal_db import ingest_cycle
         ingest_cycle(reports)
@@ -112,8 +119,23 @@ def publish(reports):
 
 
 def read_committed():
-    if not MANIFEST.is_file():
+    from db_adapter import get_active_engine, load_committed_pipeline_cycle
+    engine = get_active_engine()
+    if engine == "postgres":
+        cycle_data = load_committed_pipeline_cycle()
+        if cycle_data is not None:
+            validate_reports({k: cycle_data[k] for k in NAMES})
+            return cycle_data
         return None
+
+    # Fallback to local files (SQLite / local Windows)
+    if not MANIFEST.is_file():
+        cycle_data = load_committed_pipeline_cycle()
+        if cycle_data is not None:
+            validate_reports({k: cycle_data[k] for k in NAMES})
+            return cycle_data
+        return None
+
     manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
     if manifest.get("status") != "success":
         raise ValueError("Cycle not committed")
@@ -123,3 +145,32 @@ def read_committed():
     if manifest["cycle_id"] != reports["scanner"]["cycle_id"] or manifest.get("candle_close_utc") != reports["scanner"]["candle_close_utc"]:
         raise ValueError("Manifest does not match committed reports")
     return {"manifest": manifest, **reports}
+
+
+def read_pipeline_status():
+    from db_adapter import get_active_engine, load_pipeline_last_attempt
+    engine = get_active_engine()
+    if engine == "postgres":
+        cycle = read_committed()
+        last = load_pipeline_last_attempt()
+        return {
+            "last_committed_cycle": cycle["manifest"] if cycle else None,
+            "last_attempt": last,
+            "trading_enabled": False,
+        }
+    cycle = read_committed()
+    path = STATE_DIR / "last_attempt.json"
+    last = None
+    if path.exists():
+        try:
+            last = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    if last is None:
+        last = load_pipeline_last_attempt()
+    return {
+        "last_committed_cycle": cycle["manifest"] if cycle else None,
+        "last_attempt": last,
+        "trading_enabled": False,
+    }
+

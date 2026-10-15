@@ -239,8 +239,20 @@ if __name__ == "__main__":
     with exclusive_pipeline_lock():
         try:
             run_once()
-            atomic_json(STATE_DIR / "last_attempt.json", {"status": "success", "at": datetime.now(timezone.utc).isoformat()})
+            attempt = {"status": "success", "at": datetime.now(timezone.utc).isoformat()}
+            atomic_json(STATE_DIR / "last_attempt.json", attempt)
+            try:
+                from db_adapter import save_pipeline_last_attempt
+                save_pipeline_last_attempt(attempt)
+            except Exception:
+                pass
         except Exception as exc:
-            atomic_json(STATE_DIR / "last_attempt.json", {"status": "failed", "at": datetime.now(timezone.utc).isoformat(), "reason": str(exc)[:500]})
+            attempt = {"status": "failed", "at": datetime.now(timezone.utc).isoformat(), "reason": str(exc)[:500]}
+            atomic_json(STATE_DIR / "last_attempt.json", attempt)
+            try:
+                from db_adapter import save_pipeline_last_attempt
+                save_pipeline_last_attempt(attempt)
+            except Exception:
+                pass
             print("ERROR:", exc)
             raise SystemExit(1)

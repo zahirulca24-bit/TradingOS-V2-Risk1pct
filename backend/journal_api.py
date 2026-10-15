@@ -46,10 +46,15 @@ def journal_health():
         cur.execute("SELECT cycle_id, candle_close_utc, committed_at FROM journal_cycles ORDER BY candle_close_utc DESC LIMIT 1")
         latest = cur.fetchone()
 
+    from db_adapter import get_active_engine
+    engine = get_active_engine()
+    db_type = "PostgreSQL (Neon)" if engine == "postgres" else "SQLite (WAL mode)"
+    db_path_repr = "DATABASE_URL (Neon)" if engine == "postgres" else str(DEFAULT_DB_PATH)
+
     return {
         "status": "healthy",
-        "database_type": "SQLite (WAL mode)",
-        "database_path": str(DEFAULT_DB_PATH),
+        "database_type": db_type,
+        "database_path": db_path_repr,
         "total_cycles_logged": cycles_count,
         "total_signals_logged": signals_count,
         "total_dry_runs_logged": dry_runs_count,

@@ -31,16 +31,28 @@ def main():
                     time.sleep(min(5, max(0.01, target.timestamp() - time.time())))
                 try:
                     status = run_once()
-                    atomic_json(STATE_DIR / "last_attempt.json", {
+                    attempt_data = {
                         "status": status,
                         "at": datetime.now(timezone.utc).isoformat(),
-                    })
+                    }
+                    atomic_json(STATE_DIR / "last_attempt.json", attempt_data)
+                    try:
+                        from db_adapter import save_pipeline_last_attempt
+                        save_pipeline_last_attempt(attempt_data)
+                    except Exception:
+                        pass
                 except Exception as exc:
                     print("SCAN FAILED; committed cycle unchanged:", exc, flush=True)
-                    atomic_json(STATE_DIR / "last_attempt.json", {
+                    attempt_data = {
                         "status": "failed", "reason": str(exc)[:500],
                         "at": datetime.now(timezone.utc).isoformat(),
-                    })
+                    }
+                    atomic_json(STATE_DIR / "last_attempt.json", attempt_data)
+                    try:
+                        from db_adapter import save_pipeline_last_attempt
+                        save_pipeline_last_attempt(attempt_data)
+                    except Exception:
+                        pass
                     # Sleep until the next interval. Never retry and mix cycles.
                     time.sleep(1)
         except KeyboardInterrupt:

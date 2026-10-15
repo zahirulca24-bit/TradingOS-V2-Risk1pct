@@ -20,13 +20,8 @@ def scanner_cycle():
 @router.get("/scanner/pipeline-status")
 def pipeline_status():
     try:
-        cycle = read_committed()
-        path = STATE_DIR / "last_attempt.json"
-        last = json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
+        from pipeline_store import read_pipeline_status
+        return read_pipeline_status()
     except (OSError, KeyError, ValueError, TypeError) as exc:
         raise HTTPException(status_code=503, detail="Pipeline status unavailable") from exc
-    return {
-        "last_committed_cycle": cycle["manifest"] if cycle else None,
-        "last_attempt": last,
-        "trading_enabled": False,
-    }
+

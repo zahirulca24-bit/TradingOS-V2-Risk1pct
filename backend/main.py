@@ -1,7 +1,13 @@
 import os
+from pathlib import Path
+import sys
 
-from fastapi.middleware.cors import CORSMiddleware
+BACKEND_DIR = Path(__file__).resolve().parent
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
+
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 # Create our TradingOS backend application
@@ -17,27 +23,53 @@ async def prevent_anonymous_cloud_data_access(request: Request, call_next):
         public_prefixes = ("/market/",)
         path = request.url.path
         if path not in public_paths and not path.startswith(public_prefixes):
-            return JSONResponse(
-                status_code=403,
-                content={"detail": "Private TradingOS API temporarily disabled on public cloud pending authentication"},
-            )
+            configured_token = os.environ.get("TRADINGOS_AUTH_TOKEN")
+            if not configured_token or not configured_token.strip():
+                # Fail-closed protection: disabled on cloud until authentication token is configured
+                return JSONResponse(
+                    status_code=403,
+                    content={"detail": "Private TradingOS API temporarily disabled on public cloud pending authentication"},
+                )
+
+            # Validate client authentication token via Authorization: Bearer <token> or X-TradingOS-Auth
+            auth_header = request.headers.get("Authorization", "")
+            custom_header = request.headers.get("X-TradingOS-Auth", "")
+            provided_token = None
+            if auth_header.startswith("Bearer "):
+                provided_token = auth_header[7:].strip()
+            elif custom_header:
+                provided_token = custom_header.strip()
+
+            if not provided_token or provided_token != configured_token.strip():
+                return JSONResponse(
+                    status_code=401,
+                    content={"detail": "Unauthorized: valid authentication token required"},
+                )
+
     return await call_next(request)
+
+default_origins = [
+    "http://127.0.0.1:5200",
+    "http://localhost:5200",
+    "http://localhost:5180",
+    "http://127.0.0.1:5180",
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:5174",
+    "https://trading-os-v2-risk1pct.vercel.app",
+]
+env_origins = os.getenv("ALLOWED_ORIGINS")
+if env_origins:
+    default_origins.extend([o.strip() for o in env_origins.split(",") if o.strip()])
 
 # Allow the TradingOS frontend to access the backend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://127.0.0.1:5200", "http://localhost:5200", 
-        "http://localhost:5180",
-        "http://127.0.0.1:5180",
-        "http://localhost:5173",
-        "http://localhost:5174",
-        "http://127.0.0.1:5173",
-        "http://127.0.0.1:5174",
-        "https://trading-os-v2-risk1pct.vercel.app",
-    ],
+    allow_origins=default_origins,
     allow_credentials=False,
-    allow_methods=["GET"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Authorization", "X-TradingOS-Auth", "Content-Type", "*"],
 )
 
 # Home endpoint
@@ -139,4 +171,3 @@ app.include_router(demo_risk_router)
 # P6 Trade Journal & Daily Reports (Read-Only)
 from journal_api import router as journal_router
 app.include_router(journal_router)
-

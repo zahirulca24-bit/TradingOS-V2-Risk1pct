@@ -1,4 +1,3 @@
-import { apiUrl } from "./api";
 import SignalResultsPage from "./SignalResultsPage";
 import Phase3Dashboard from "./Phase3Dashboard";
 import TradeJournalPage from "./TradeJournalPage";
@@ -6,6 +5,7 @@ import StrategyBuilderPage from "./StrategyBuilderPage";
 import BotManagerPage from "./BotManagerPage";
 import DemoTradingPage from "./DemoTradingPage";
 import { useEffect as useBackendEffect, useState as useBackendState } from "react";
+import { apiUrl } from "./api";
 
 import ScannerPage from "./OpportunityScannerPage";
 import TradingTerminalPage from "./TradingTerminalPage";
