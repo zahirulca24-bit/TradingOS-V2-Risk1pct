@@ -279,17 +279,26 @@ class TestStorageAdapter(unittest.TestCase):
 
             # 1. Local environment (RENDER unset) allows access
             with patch.dict(os.environ, {}, clear=True):
+                req.headers = {}
                 res = await prevent_anonymous_cloud_data_access(req, nxt)
                 self.assertEqual(res, 'next_called')
 
-            # 2. Cloud environment (RENDER=true) with no token configured fails closed (403)
+            # 2. Cloud environment (RENDER=true) with no token configured:
+            # Untrusted / anonymous origin fails closed (403)
             with patch.dict(os.environ, {'RENDER': 'true'}, clear=True):
+                req.headers = {'origin': 'https://untrusted-attacker.com'}
                 res = await prevent_anonymous_cloud_data_access(req, nxt)
                 self.assertEqual(res.status_code, 403)
 
-            # 3. Cloud environment with token configured but unauthenticated request rejected (401)
+                # Trusted Vercel origin permitted
+                req.headers = {'origin': 'https://trading-os-v2-risk1pct.vercel.app'}
+                res = await prevent_anonymous_cloud_data_access(req, nxt)
+                self.assertEqual(res, 'next_called')
+
+            # 3. Cloud environment with token configured:
+            # Unauthenticated request rejected (401)
             with patch.dict(os.environ, {'RENDER': 'true', 'TRADINGOS_AUTH_TOKEN': 'secret-123'}, clear=True):
-                req.headers = {}
+                req.headers = {'origin': 'https://trading-os-v2-risk1pct.vercel.app'}
                 res = await prevent_anonymous_cloud_data_access(req, nxt)
                 self.assertEqual(res.status_code, 401)
 

@@ -13,41 +13,6 @@ from fastapi.responses import JSONResponse
 # Create our TradingOS backend application
 app = FastAPI(title="TradingOS V2 API")
 
-# Fail closed for sensitive endpoints on public Render until secure session
-# authentication is implemented. Local Windows research workflow is unchanged.
-@app.middleware("http")
-async def prevent_anonymous_cloud_data_access(request: Request, call_next):
-    on_render = os.environ.get("RENDER", "").lower() in ("true", "1")
-    if on_render and request.method != "OPTIONS":
-        public_paths = {"/", "/health"}
-        public_prefixes = ("/market/",)
-        path = request.url.path
-        if path not in public_paths and not path.startswith(public_prefixes):
-            configured_token = os.environ.get("TRADINGOS_AUTH_TOKEN")
-            if not configured_token or not configured_token.strip():
-                # Fail-closed protection: disabled on cloud until authentication token is configured
-                return JSONResponse(
-                    status_code=403,
-                    content={"detail": "Private TradingOS API temporarily disabled on public cloud pending authentication"},
-                )
-
-            # Validate client authentication token via Authorization: Bearer <token> or X-TradingOS-Auth
-            auth_header = request.headers.get("Authorization", "")
-            custom_header = request.headers.get("X-TradingOS-Auth", "")
-            provided_token = None
-            if auth_header.startswith("Bearer "):
-                provided_token = auth_header[7:].strip()
-            elif custom_header:
-                provided_token = custom_header.strip()
-
-            if not provided_token or provided_token != configured_token.strip():
-                return JSONResponse(
-                    status_code=401,
-                    content={"detail": "Unauthorized: valid authentication token required"},
-                )
-
-    return await call_next(request)
-
 default_origins = [
     "http://127.0.0.1:5200",
     "http://localhost:5200",
@@ -62,6 +27,49 @@ default_origins = [
 env_origins = os.getenv("ALLOWED_ORIGINS")
 if env_origins:
     default_origins.extend([o.strip() for o in env_origins.split(",") if o.strip()])
+
+# Fail closed for sensitive endpoints on public Render until secure session
+# authentication is implemented. Local Windows research workflow is unchanged.
+@app.middleware("http")
+async def prevent_anonymous_cloud_data_access(request: Request, call_next):
+    on_render = os.environ.get("RENDER", "").lower() in ("true", "1")
+    if on_render and request.method != "OPTIONS":
+        public_paths = {"/", "/health"}
+        public_prefixes = ("/market/",)
+        path = request.url.path
+        if path not in public_paths and not path.startswith(public_prefixes):
+            configured_token = os.environ.get("TRADINGOS_AUTH_TOKEN")
+            
+            # 1. If an explicit authentication token is configured, enforce token validation
+            if configured_token and configured_token.strip():
+                auth_header = request.headers.get("Authorization", "")
+                custom_header = request.headers.get("X-TradingOS-Auth", "")
+                provided_token = None
+                if auth_header.startswith("Bearer "):
+                    provided_token = auth_header[7:].strip()
+                elif custom_header:
+                    provided_token = custom_header.strip()
+
+                if not provided_token or provided_token != configured_token.strip():
+                    return JSONResponse(
+                        status_code=401,
+                        content={"detail": "Unauthorized: valid authentication token required"},
+                    )
+            else:
+                # 2. If token is not explicitly configured, permit the trusted Vercel frontend origin
+                origin = request.headers.get("origin", "").rstrip("/")
+                referer = request.headers.get("referer", "").rstrip("/")
+                is_trusted = any(
+                    origin == o.rstrip("/") or referer.startswith(o.rstrip("/"))
+                    for o in default_origins
+                )
+                if not is_trusted:
+                    return JSONResponse(
+                        status_code=403,
+                        content={"detail": "Private TradingOS API temporarily disabled on public cloud pending authentication"},
+                    )
+
+    return await call_next(request)
 
 # Allow the TradingOS frontend to access the backend
 app.add_middleware(
