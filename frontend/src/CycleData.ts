@@ -1,7 +1,8 @@
+import { API_ROOT } from "./api";
 // TradingOS Phase 3: one committed read-only Phase 2 cycle for every page.
 import { useEffect, useState } from "react";
 
-export const API_ROOT = "http://127.0.0.1:8765";
+export { API_ROOT } from "./api";
 export const NO_VALUE = "\u2014";
 
 export type PlanStatus = "PLAN_READY" | "WAIT" | "REJECTED" | "EXCLUDED";
