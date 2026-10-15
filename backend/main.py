@@ -1,9 +1,27 @@
-from fastapi.middleware.cors import CORSMiddleware
+import os
 
-from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 
 # Create our TradingOS backend application
 app = FastAPI(title="TradingOS V2 API")
+
+# Fail closed for sensitive endpoints on public Render until secure session
+# authentication is implemented. Local Windows research workflow is unchanged.
+@app.middleware("http")
+async def prevent_anonymous_cloud_data_access(request: Request, call_next):
+    on_render = os.environ.get("RENDER", "").lower() in ("true", "1")
+    if on_render and request.method != "OPTIONS":
+        public_paths = {"/", "/health"}
+        public_prefixes = ("/market/",)
+        path = request.url.path
+        if path not in public_paths and not path.startswith(public_prefixes):
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "Private TradingOS API temporarily disabled on public cloud pending authentication"},
+            )
+    return await call_next(request)
 
 # Allow the TradingOS frontend to access the backend
 app.add_middleware(
