@@ -1,7 +1,8 @@
+import { API_ROOT } from "./api";
 
 import { useEffect, useState } from "react";
 
-const API = "http://127.0.0.1:8765";
+const API = API_ROOT;
 
 type ScannerRow = {
   symbol: string;
