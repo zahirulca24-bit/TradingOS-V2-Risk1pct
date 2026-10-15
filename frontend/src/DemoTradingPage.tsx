@@ -1,3 +1,4 @@
+import { apiUrl, API_ROOT } from "./api";
 import { useState, useEffect } from "react";
 import {
   Wallet, ShieldCheck, Activity, WifiOff,
@@ -75,8 +76,8 @@ export default function DemoTradingPage() {
     async function fetchDemoData() {
       try {
         const [accRes, riskRes] = await Promise.allSettled([
-          fetch("http://127.0.0.1:8765/demo/account", { cache: "no-store" }),
-          fetch("http://127.0.0.1:8765/demo/risk-health", { cache: "no-store" }),
+          fetch(apiUrl("/demo/account"), { cache: "no-store" }),
+          fetch(apiUrl("/demo/risk-health"), { cache: "no-store" }),
         ]);
 
         if (!active) return;
@@ -173,7 +174,7 @@ export default function DemoTradingPage() {
           <p style={{ color: "#9299a3", fontSize: "13px", margin: 0, lineHeight: "1.6" }}>
             The backend demo API could not be reached or Bybit Demo credentials are unconfigured.
             Check that <code>backend/.env</code> contains valid <code>BYBIT_DEMO=true</code>, <code>BYBIT_API_KEY</code>,
-            and <code>BYBIT_API_SECRET</code>, and ensure the backend is running at <code>http://127.0.0.1:8765</code>.
+            and <code>BYBIT_API_SECRET</code>, and ensure the backend is running at <code>{API_ROOT}</code>.
           </p>
         </div>
       )}
