@@ -571,7 +571,10 @@ def load_committed_pipeline_cycle(dsn: Optional[str] = None, db_path: Optional[U
             cur.execute(f"SELECT manifest, scanner_report, trade_plans_report, opportunities_report FROM pipeline_cycles WHERE cycle_id = {placeholder}", (cycle_id,))
             cycle_row = cur.fetchone()
             if not cycle_row:
-                return None
+                cur.execute("SELECT manifest, scanner_report, trade_plans_report, opportunities_report FROM pipeline_cycles ORDER BY candle_close_utc DESC LIMIT 1")
+                cycle_row = cur.fetchone()
+                if not cycle_row:
+                    return None
 
         manifest = json.loads(cycle_row["manifest"])
         scanner = json.loads(cycle_row["scanner_report"])
