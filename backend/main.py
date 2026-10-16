@@ -146,6 +146,11 @@ def _execute_scanner_cycle_background():
     except Exception as exc:
         print("BACKGROUND SCAN FAILED:", exc, flush=True)
         try:
+            from telegram_notifier import notify_scan_failed
+            notify_scan_failed(str(exc))
+        except Exception:
+            pass
+        try:
             from pipeline_store import STATE_DIR, atomic_json
             from datetime import datetime, timezone
             attempt = {"status": "failed", "at": datetime.now(timezone.utc).isoformat(), "reason": str(exc)[:500]}

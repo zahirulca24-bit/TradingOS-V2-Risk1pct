@@ -114,6 +114,13 @@ def publish(reports):
         ingest_cycle(reports)
     except Exception as exc:
         print("WARNING: Research journal ingestion failed:", type(exc).__name__, exc)
+
+    try:
+        from telegram_notifier import notify_cycle_published
+        notify_cycle_published(reports)
+    except Exception as exc:
+        print("WARNING: Telegram notification dispatch failed:", type(exc).__name__, exc)
+
     return ident
 
 

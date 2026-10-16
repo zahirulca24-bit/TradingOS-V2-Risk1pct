@@ -53,6 +53,11 @@ def main():
                         save_pipeline_last_attempt(attempt_data)
                     except Exception:
                         pass
+                    try:
+                        from telegram_notifier import notify_scan_failed
+                        notify_scan_failed(str(exc))
+                    except Exception:
+                        pass
                     # Sleep until the next interval. Never retry and mix cycles.
                     time.sleep(1)
         except KeyboardInterrupt:
