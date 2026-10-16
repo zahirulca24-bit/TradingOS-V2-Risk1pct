@@ -7,7 +7,7 @@ BACKEND_DIR = Path(__file__).resolve().parent
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-from fastapi import FastAPI, Request
+from fastapi import BackgroundTasks, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -43,13 +43,17 @@ async def prevent_anonymous_cloud_data_access(request: Request, call_next):
             
             # 1. If an explicit authentication token is configured, enforce token validation
             if configured_token and configured_token.strip():
-                auth_header = request.headers.get("Authorization", "")
-                custom_header = request.headers.get("X-TradingOS-Auth", "")
+                auth_header = request.headers.get("Authorization", "") if hasattr(request, "headers") else ""
+                custom_header = request.headers.get("X-TradingOS-Auth", "") if hasattr(request, "headers") else ""
                 provided_token = None
-                if auth_header.startswith("Bearer "):
+                if auth_header and auth_header.startswith("Bearer "):
                     provided_token = auth_header[7:].strip()
                 elif custom_header:
                     provided_token = custom_header.strip()
+                elif hasattr(request, "query_params") and hasattr(request.query_params, "get"):
+                    raw_q = request.query_params.get("token") or request.query_params.get("auth")
+                    if isinstance(raw_q, str) and raw_q.strip():
+                        provided_token = raw_q.strip()
 
                 if not provided_token or not hmac.compare_digest(provided_token, configured_token.strip()):
                     return JSONResponse(
@@ -111,6 +115,48 @@ app.include_router(market_router)
 
 from scanner_api import router as scanner_router
 app.include_router(scanner_router)
+
+
+def _execute_scanner_cycle_background():
+    try:
+        from pipeline_lock import exclusive_pipeline_lock
+        with exclusive_pipeline_lock():
+            from scanner_pipeline import run_once
+            from pipeline_store import STATE_DIR, atomic_json
+            from datetime import datetime, timezone
+            print("BACKGROUND SCANNER TRIGGERED", flush=True)
+            status = run_once(quiet=True)
+            attempt = {"status": status, "at": datetime.now(timezone.utc).isoformat()}
+            try:
+                from db_adapter import save_pipeline_last_attempt
+                save_pipeline_last_attempt(attempt)
+            except Exception:
+                pass
+            atomic_json(STATE_DIR / "last_attempt.json", attempt)
+            print("BACKGROUND SCAN COMPLETED:", status, flush=True)
+    except Exception as exc:
+        print("BACKGROUND SCAN FAILED:", exc, flush=True)
+        try:
+            from pipeline_store import STATE_DIR, atomic_json
+            from datetime import datetime, timezone
+            attempt = {"status": "failed", "at": datetime.now(timezone.utc).isoformat(), "reason": str(exc)[:500]}
+            atomic_json(STATE_DIR / "last_attempt.json", attempt)
+            try:
+                from db_adapter import save_pipeline_last_attempt
+                save_pipeline_last_attempt(attempt)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+
+@app.api_route("/scanner/trigger", methods=["GET", "POST"])
+def trigger_scanner(background_tasks: BackgroundTasks):
+    background_tasks.add_task(_execute_scanner_cycle_background)
+    return {
+        "status": "accepted",
+        "message": "Scanner cycle initiated in background. Results will be saved to database."
+    }
 
 
 # TradingOS V2 read-only opportunity ranking

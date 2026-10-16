@@ -138,9 +138,14 @@ class TestPublication(unittest.TestCase):
         self.patch_base = patch.object(pipeline_store, "BASE", self.root)
         self.patch_state = patch.object(pipeline_store, "STATE_DIR", self.root / "pipeline_state")
         self.patch_manifest = patch.object(pipeline_store, "MANIFEST", self.root / "pipeline_state" / "current_cycle.json")
-        for p in (self.patch_base, self.patch_state, self.patch_manifest):p.start()
+        self.patch_engine = patch("db_adapter.get_active_engine", return_value="sqlite")
+        self.patch_load = patch("db_adapter.load_committed_pipeline_cycle", return_value=None)
+        self.patch_save = patch("db_adapter.save_pipeline_cycle", return_value=None)
+        for p in (self.patch_base, self.patch_state, self.patch_manifest, self.patch_engine, self.patch_load, self.patch_save):
+            p.start()
         self.addCleanup(self.tmp.cleanup)
-        for p in (self.patch_base, self.patch_state, self.patch_manifest):self.addCleanup(p.stop)
+        for p in (self.patch_base, self.patch_state, self.patch_manifest, self.patch_engine, self.patch_load, self.patch_save):
+            self.addCleanup(p.stop)
 
     def reports(self):
         ident = "19700101T020000Z"
