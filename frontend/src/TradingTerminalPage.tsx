@@ -1,5 +1,5 @@
 import { API_ROOT } from "./api";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   createChart,
@@ -9,6 +9,8 @@ import {
   LineSeries,
   ColorType,
   CrosshairMode,
+  LineStyle,
+  type LineWidth,
   type UTCTimestamp,
   type LogicalRange
 } from "lightweight-charts";
@@ -58,7 +60,6 @@ function confirmedStructure(candles: Candle[]): ChartMarker[] {
 }
 
 const API = API_ROOT;
-const SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT"];
 
 function calculateRSI(data: Candle[], period = 14) {
   const result: { time: UTCTimestamp; value: number }[] = [];
@@ -181,17 +182,110 @@ export default function TradingTerminalPage() {
   const selectedSweep = cycle?.scanner.results.find(item => item.symbol === symbol);
   const closedCycleSeconds = cycle
     ? Date.parse(cycle.manifest.candle_close_utc) / 1000 : NaN;
-  // Only draw Phase 2 evidence on a 15m chart that contains the SAME closed candle.
   const chartAligned = timeframe === "15" && candles.length > 0 &&
     candles[candles.length - 1].time + 900 === closedCycleSeconds;
   const showEvidence = cycleFresh && chartAligned;
   const planReady = showEvidence && selectedPlan?.status === "PLAN_READY";
 
-  const watchSymbols = Array.from(new Set([
-    symbol,
-    ...opportunities.slice(0, 10).map((item) => item.symbol),
-    ...SYMBOLS,
-  ]));
+  const [watchlistFilter, setWatchlistFilter] = useState<"all" | "waiting">("all");
+
+  type CandidateItem = {
+    symbol: string;
+    cleanSymbol: string;
+    price: number | null;
+    direction: string;
+    status: string;
+    badgeLabel: string;
+    badgeType: "ready" | "waiting" | "approaching" | "watch" | "neutral";
+    distancePct: number | null;
+    subLabel: string;
+    supportLevel?: number | null;
+    resistanceLevel?: number | null;
+    plan?: typeof selectedPlan;
+  };
+
+  const candidates = useMemo<CandidateItem[]>(() => {
+    const list: CandidateItem[] = [];
+    const seen = new Set<string>();
+
+    for (const opp of opportunities) {
+      seen.add(opp.symbol);
+      const plan = cycle?.trade_plans.results.find(p => p.symbol === opp.symbol);
+      const isReady = plan?.status === "PLAN_READY";
+      const isWaiting = opp.status === "ENTRY_WATCH";
+      const isApproaching = opp.status === "APPROACHING" || opp.status === "NEAR_ZONE";
+
+      let badgeType: CandidateItem["badgeType"] = "watch";
+      let badgeLabel = "WATCH";
+
+      if (isReady) {
+        badgeType = "ready";
+        badgeLabel = "READY TO HIT";
+      } else if (isWaiting) {
+        badgeType = "waiting";
+        badgeLabel = "WAITING TO HIT";
+      } else if (isApproaching) {
+        badgeType = "approaching";
+        badgeLabel = "APPROACHING";
+      }
+
+      const distText = typeof opp.distance_pct === "number"
+        ? (opp.distance_pct === 0 ? "In key zone" : `${(opp.distance_pct * 100).toFixed(1)}% to zone`)
+        : "Monitored";
+
+      list.push({
+        symbol: opp.symbol,
+        cleanSymbol: opp.symbol.replace("USDT", ""),
+        price: opp.price,
+        direction: opp.direction,
+        status: opp.status,
+        badgeLabel,
+        badgeType,
+        distancePct: opp.distance_pct,
+        subLabel: isReady ? `1:${plan?.rr?.toFixed(1) ?? "2.0"} RR` : distText,
+        supportLevel: opp.support?.level,
+        resistanceLevel: opp.resistance?.level,
+        plan
+      });
+    }
+
+    // Prioritize candidates: ready > waiting > approaching > others
+    list.sort((a, b) => {
+      const order = { ready: 0, waiting: 1, approaching: 2, watch: 3, neutral: 4 };
+      const diff = (order[a.badgeType] ?? 99) - (order[b.badgeType] ?? 99);
+      if (diff !== 0) return diff;
+      return (a.distancePct ?? 999) - (b.distancePct ?? 999);
+    });
+
+    if (symbol && !seen.has(symbol)) {
+      list.unshift({
+        symbol,
+        cleanSymbol: symbol.replace("USDT", ""),
+        price: null,
+        direction: "NEUTRAL",
+        status: "ACTIVE",
+        badgeLabel: "ACTIVE",
+        badgeType: "neutral",
+        distancePct: null,
+        subLabel: "Current chart",
+      });
+    }
+
+    return list;
+  }, [opportunities, cycle, symbol]);
+
+  const waitingCount = useMemo(() => {
+    return candidates.filter(c => c.badgeType === "ready" || c.badgeType === "waiting").length;
+  }, [candidates]);
+
+  const displayedCandidates = useMemo(() => {
+    if (watchlistFilter === "waiting") {
+      return candidates.filter(
+        c => c.badgeType === "ready" || c.badgeType === "waiting" || c.badgeType === "approaching" || c.symbol === symbol
+      );
+    }
+    return candidates;
+  }, [candidates, watchlistFilter, symbol]);
 
   // Poll closed historical candles without sending trading orders.
   useEffect(() => {
@@ -386,37 +480,98 @@ export default function TradingTerminalPage() {
       })));
       if (rsi) rsi.setData(calculateRSI(data));
 
-      for (const line of priceLines) price.removePriceLine(line);
-      priceLines.length = 0;
-      const addLevel = (level: number | null | undefined, title: string, color: string) => {
-        if (typeof level !== "number" || !Number.isFinite(level)) return;
-        priceLines.push(price.createPriceLine({
-          price: level, color, lineWidth: 1, lineStyle: 2,
-          axisLabelVisible: true, title
-        }));
-      };
-      if (state.showEvidence && state.selectedOpportunity) {
-        addLevel(state.selectedOpportunity.support?.level, "AUTO SUPPORT", "#21b981");
-        addLevel(state.selectedOpportunity.resistance?.level, "AUTO RESISTANCE", "#e56b73");
+      for (const line of priceLines) {
+        try { price.removePriceLine(line); } catch { /* ignore */ }
       }
-      if (state.planReady && state.selectedPlan) {
-        addLevel(state.selectedPlan.entry_reference, "ENTRY REF", "#60a5fa");
-        addLevel(state.selectedPlan.sl, "SL", "#ef4444");
-        addLevel(state.selectedPlan.tp, "TP", "#22c55e");
+      priceLines.length = 0;
+
+      const addLevel = (
+        level: number | null | undefined,
+        title: string,
+        color: string,
+        lineStyle: LineStyle = LineStyle.Dashed,
+        lineWidth: LineWidth = 1
+      ) => {
+        if (typeof level !== "number" || !Number.isFinite(level) || level <= 0) return;
+        try {
+          priceLines.push(price.createPriceLine({
+            price: level,
+            color,
+            lineWidth,
+            lineStyle,
+            axisLabelVisible: true,
+            title
+          }));
+        } catch { /* ignore */ }
+      };
+
+      const opp = state.selectedOpportunity;
+      const plan = state.selectedPlan;
+
+      // 1. Draw Support & Resistance levels analyzed by the bot
+      if (opp) {
+        const isLong = opp.direction === "LONG";
+        const isWaiting = opp.status === "ENTRY_WATCH" || opp.status === "APPROACHING";
+
+        // Support / Demand Zone & Level
+        if (opp.support?.level) {
+          const suppTitle = isLong && isWaiting
+            ? `🟢 DEMAND TARGET ($${opp.support.level.toLocaleString()})`
+            : `BOT SUPPORT ($${opp.support.level.toLocaleString()})`;
+          addLevel(opp.support.level, suppTitle, "#10b981", LineStyle.Solid, (isLong ? 2 : 1) as LineWidth);
+
+          if (opp.support.upper && Math.abs(opp.support.upper - opp.support.level) > 0.000001) {
+            addLevel(opp.support.upper, "DEMAND ZONE HIGH", "#10b98166", LineStyle.Dashed, 1);
+          }
+          if (opp.support.lower && Math.abs(opp.support.lower - opp.support.level) > 0.000001) {
+            addLevel(opp.support.lower, "DEMAND ZONE LOW", "#10b98166", LineStyle.Dashed, 1);
+          }
+        }
+
+        // Resistance / Supply Zone & Level
+        if (opp.resistance?.level) {
+          const resTitle = !isLong && isWaiting
+            ? `🔴 SUPPLY TARGET ($${opp.resistance.level.toLocaleString()})`
+            : `BOT RESISTANCE ($${opp.resistance.level.toLocaleString()})`;
+          addLevel(opp.resistance.level, resTitle, "#ef4444", LineStyle.Solid, (!isLong ? 2 : 1) as LineWidth);
+
+          if (opp.resistance.lower && Math.abs(opp.resistance.lower - opp.resistance.level) > 0.000001) {
+            addLevel(opp.resistance.lower, "SUPPLY ZONE LOW", "#ef444466", LineStyle.Dashed, 1);
+          }
+          if (opp.resistance.upper && Math.abs(opp.resistance.upper - opp.resistance.level) > 0.000001) {
+            addLevel(opp.resistance.upper, "SUPPLY ZONE HIGH", "#ef444466", LineStyle.Dashed, 1);
+          }
+        }
       }
 
+      // 2. Draw Trade Plan Levels (Entry Ref, SL, TP, Sweep Level)
+      if (plan) {
+        if (typeof plan.entry_reference === "number" && plan.entry_reference > 0) {
+          addLevel(plan.entry_reference, `PLAN ENTRY ($${plan.entry_reference.toLocaleString()})`, "#38bdf8", LineStyle.Solid, 2);
+        }
+        if (typeof plan.sl === "number" && plan.sl > 0) {
+          addLevel(plan.sl, `PLAN SL ($${plan.sl.toLocaleString()})`, "#ef4444", LineStyle.Solid, 2);
+        }
+        if (typeof plan.tp === "number" && plan.tp > 0) {
+          addLevel(plan.tp, `PLAN TP ($${plan.tp.toLocaleString()})`, "#22c55e", LineStyle.Solid, 2);
+        }
+        if (typeof plan.sweep_level === "number" && plan.sweep_level > 0) {
+          addLevel(plan.sweep_level, `SWEEP TARGET ($${plan.sweep_level.toLocaleString()})`, "#fbbf24", LineStyle.Dashed, 1);
+        }
+      }
+
+      // 3. Structure & Liquidity Sweep Markers
       const markers: ChartMarker[] = confirmedStructure(data);
       const sweepTime = state.selectedSweep?.candle_time;
-      if (state.showEvidence && typeof sweepTime === "number" &&
-          data.some(c => c.time === sweepTime)) {
+      if (typeof sweepTime === "number" && data.some(c => c.time === sweepTime)) {
         markers.push({
           time: sweepTime as UTCTimestamp,
           position: state.selectedSweep?.direction === "SHORT" ? "aboveBar" : "belowBar",
           color: state.selectedPlan?.status === "PLAN_READY" ? "#34d399" : "#fbbf24",
           shape: state.selectedSweep?.direction === "SHORT" ? "arrowDown" : "arrowUp",
           text: state.selectedPlan?.status === "PLAN_READY"
-            ? `SWEEP + ${state.selectedPlan.pattern ?? "PATTERN"} (PLAN)`
-            : "SWEEP (NOT ENTRY)"
+            ? `SWEEP + ${state.selectedPlan.pattern ?? "PATTERN"} (PLAN READY)`
+            : "LIQUIDITY SWEEP OBSERVED"
         });
       }
       markers.sort((a, b) => Number(a.time) - Number(b.time));
@@ -544,6 +699,51 @@ export default function TradingTerminalPage() {
             ) : "Waiting for data..."}
           </div>
 
+          {/* Bot Analysis HUD */}
+          {selectedOpportunity ? (
+            <div className="market-bot-hud">
+              <span className={`hud-tag ${selectedOpportunity.direction === "LONG" ? "long" : "short"}`}>
+                {selectedOpportunity.direction === "LONG" ? "🟢 LONG BIAS" : "🔴 SHORT BIAS"}
+              </span>
+
+              <span className={`hud-tag ${
+                selectedPlan?.status === "PLAN_READY" ? "ready" :
+                selectedOpportunity.status === "ENTRY_WATCH" ? "waiting" :
+                selectedOpportunity.status === "APPROACHING" ? "approaching" : "watch"
+              }`}>
+                {selectedPlan?.status === "PLAN_READY" ? "🎯 PLAN READY TO HIT" :
+                 selectedOpportunity.status === "ENTRY_WATCH" ? "⏳ WAITING TO HIT (IN ZONE)" :
+                 selectedOpportunity.status === "APPROACHING" ? "👀 APPROACHING ZONE" :
+                 selectedOpportunity.status.replace("_", " ")}
+              </span>
+
+              {selectedOpportunity.support && (
+                <span className="hud-level-item">
+                  Demand: <strong>${selectedOpportunity.support.level.toLocaleString()}</strong>
+                </span>
+              )}
+
+              {selectedOpportunity.resistance && (
+                <span className="hud-level-item">
+                  Supply: <strong>${selectedOpportunity.resistance.level.toLocaleString()}</strong>
+                </span>
+              )}
+
+              {selectedPlan?.entry_reference && (
+                <span className="hud-level-item hud-plan">
+                  Entry: <strong>${selectedPlan.entry_reference.toLocaleString()}</strong> | 
+                  SL: <strong>${selectedPlan.sl?.toLocaleString()}</strong> | 
+                  TP: <strong>${selectedPlan.tp?.toLocaleString()}</strong>
+                </span>
+              )}
+            </div>
+          ) : (
+            <div className="market-bot-hud neutral">
+              <span className="hud-tag watch">📊 SYMBOL: {symbol}</span>
+              <span className="hud-level-item">Select a candidate from the watchlist to view bot analysis zones.</span>
+            </div>
+          )}
+
           <div className="market-chart-area">
             <div ref={containerRef} className="market-chart-canvas" />
             <ChartDrawingLayer key={`${symbol}:${timeframe}`} symbol={symbol}
@@ -599,13 +799,13 @@ export default function TradingTerminalPage() {
                   <span>
                     Support:{" "}
                     <strong style={{ color: "#21b981" }}>
-                      {showEvidence ? priceText(selectedOpportunity.support?.level) : NO_VALUE}
+                      {priceText(selectedOpportunity.support?.level)}
                     </strong>
                   </span>
                   <span>
                     Resistance:{" "}
                     <strong style={{ color: "#e56b73" }}>
-                      {showEvidence ? priceText(selectedOpportunity.resistance?.level) : NO_VALUE}
+                      {priceText(selectedOpportunity.resistance?.level)}
                     </strong>
                   </span>
                   <span>
@@ -626,10 +826,10 @@ export default function TradingTerminalPage() {
                   {" · "}Pattern: {selectedPlan?.pattern ?? NO_VALUE}
                 </p>
                 <p style={{color:"#a1a1aa",margin:"8px 0 0"}}>
-                  Reference Entry: {showEvidence ? priceText(selectedPlan?.entry_reference) : NO_VALUE}
-                  {" · "}SL: {showEvidence ? priceText(selectedPlan?.sl) : NO_VALUE}
-                  {" · "}TP: {showEvidence ? priceText(selectedPlan?.tp) : NO_VALUE}
-                  {" · "}RR: {showEvidence ? priceText(selectedPlan?.rr) : NO_VALUE}
+                  Reference Entry: {priceText(selectedPlan?.entry_reference)}
+                  {" · "}SL: {priceText(selectedPlan?.sl)}
+                  {" · "}TP: {priceText(selectedPlan?.tp)}
+                  {" · "}RR: {selectedPlan?.rr ? `1:${selectedPlan.rr.toFixed(2)}` : NO_VALUE}
                   {" · "}Sweep candle: {candleText(selectedSweep?.candle_time)}
                 </p>
               </>
@@ -659,40 +859,63 @@ export default function TradingTerminalPage() {
 
         <aside className="market-watchlist">
           <div className="market-watchlist-header">
-            <strong>Watchlist</strong>
-            <small>{watchSymbols.length} SYMBOLS</small>
+            <strong>Candidates</strong>
+            <small>{candidates.length} MONITORED</small>
           </div>
           <div className="market-watchlist-subtitle">BYBIT · USDT PERPETUAL</div>
 
-          {watchSymbols.map(s => {
-            const oppPrice = opportunities.find(o => o.symbol === s)?.price;
-            const displayPrice = symbol === s && last
-              ? last.close.toLocaleString()
-              : (typeof oppPrice === "number" ? oppPrice.toLocaleString() : "—");
-            const priceLabel = symbol === s
-              ? "Active chart"
-              : (typeof oppPrice === "number" ? "Saved close" : "Select symbol");
+          <div className="market-watchlist-filter-tabs">
+            <button
+              className={watchlistFilter === "all" ? "filter-tab active" : "filter-tab"}
+              onClick={() => setWatchlistFilter("all")}
+            >
+              All ({candidates.length})
+            </button>
+            <button
+              className={watchlistFilter === "waiting" ? "filter-tab active" : "filter-tab"}
+              onClick={() => setWatchlistFilter("waiting")}
+            >
+              ⚡ Waiting to Hit ({waitingCount})
+            </button>
+          </div>
 
-            return (
-              <button
-                key={s}
-                className={symbol === s ? "selected" : ""}
-                onClick={() => chooseSymbol(s)}
-              >
-                <span>
-                  <strong>{s.replace("USDT", "")}</strong>
-                  <small>USDT</small>
-                </span>
-                <span>
-                  {displayPrice}
-                  <small>{priceLabel}</small>
-                </span>
-              </button>
-            );
-          })}
+          <div className="market-watchlist-list">
+            {displayedCandidates.map(c => {
+              const isSelected = symbol === c.symbol;
+              const isLong = c.direction === "LONG";
+              const displayPrice = isSelected && last
+                ? last.close.toLocaleString()
+                : (typeof c.price === "number" ? c.price.toLocaleString() : "—");
+
+              return (
+                <button
+                  key={c.symbol}
+                  className={`candidate-card ${isSelected ? "selected" : ""}`}
+                  onClick={() => chooseSymbol(c.symbol)}
+                >
+                  <div className="candidate-left">
+                    <div className="candidate-symbol-row">
+                      <strong className="cand-sym">{c.cleanSymbol}</strong>
+                      <span className={`cand-dir ${isLong ? "dir-long" : "dir-short"}`}>
+                        {isLong ? "LONG ▲" : "SHORT ▼"}
+                      </span>
+                    </div>
+                    <span className={`cand-badge badge-${c.badgeType}`}>
+                      {c.badgeLabel}
+                    </span>
+                  </div>
+
+                  <div className="candidate-right">
+                    <span className="cand-price">{displayPrice}</span>
+                    <small className="cand-sub">{isSelected ? "Active chart" : c.subLabel}</small>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
 
           <div className="market-watchlist-note">
-            Prices are saved historical closes, not live quotes.
+            🤖 Auto-drawn analysis: Demand & Supply zones, Entry/SL/TP & structure levels.
           </div>
         </aside>
       </div>

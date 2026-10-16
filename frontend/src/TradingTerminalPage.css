@@ -300,3 +300,238 @@
 .tos-drawing-svg:not(.drawing-active) { pointer-events: none !important; }
 .tos-drawing-svg.drawing-active { pointer-events: all !important; touch-action: none; cursor: crosshair; }
 .market-chart-area { min-height: 560px; }
+
+/* Bot Analysis HUD */
+.market-bot-hud {
+  padding: 8px 15px;
+  background: #0b0d11;
+  border-top: 1px solid #1a1c23;
+  border-bottom: 1px solid #1a1c23;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 11px;
+}
+
+.hud-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+}
+
+.hud-tag.long {
+  background: rgba(34, 197, 94, 0.15);
+  color: #4ade80;
+  border: 1px solid rgba(34, 197, 94, 0.35);
+}
+
+.hud-tag.short {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+}
+
+.hud-tag.waiting {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+.hud-tag.ready {
+  background: rgba(16, 185, 129, 0.2);
+  color: #10b981;
+  border: 1px solid #10b981;
+}
+
+.hud-tag.approaching {
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+}
+
+.hud-tag.watch {
+  background: #181920;
+  color: #9ca3af;
+  border: 1px solid #282a35;
+}
+
+.hud-level-item {
+  color: #9ca3af;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.hud-level-item strong {
+  color: #f3f4f6;
+}
+
+.hud-level-item.hud-plan {
+  color: #60a5fa;
+}
+
+.hud-level-item.hud-plan strong {
+  color: #93c5fd;
+}
+
+/* Candidate Watchlist Styles */
+.market-watchlist-filter-tabs {
+  display: flex;
+  gap: 6px;
+  padding: 8px 12px 12px;
+  border-bottom: 1px solid #1f2026;
+}
+
+.filter-tab {
+  flex: 1;
+  background: #090a0d;
+  border: 1px solid #23252e;
+  color: #888e9b;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 6px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.15s ease;
+}
+
+.filter-tab:hover {
+  background: #151720;
+  color: #e5e7eb;
+}
+
+.filter-tab.active {
+  background: #1a1e2b;
+  border-color: #3b82f6;
+  color: #60a5fa;
+}
+
+.market-watchlist-list {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  max-height: calc(100vh - 270px);
+}
+
+.candidate-card {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 10px !important;
+  width: 100% !important;
+  border: 0 !important;
+  border-bottom: 1px solid #16181f !important;
+  background: #000 !important;
+  color: #eee !important;
+  cursor: pointer !important;
+  padding: 12px 14px !important;
+  transition: background 0.15s ease !important;
+}
+
+.candidate-card:hover {
+  background: #0d0f14 !important;
+}
+
+.candidate-card.selected {
+  background: #131722 !important;
+  box-shadow: inset 3px 0 0 #3b82f6 !important;
+}
+
+.candidate-left,
+.candidate-right {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.candidate-right {
+  align-items: flex-end;
+  text-align: right;
+}
+
+.candidate-symbol-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cand-sym {
+  font-size: 13px;
+  font-weight: 700;
+  color: #f9fafb;
+}
+
+.cand-dir {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.cand-dir.dir-long {
+  color: #34d399;
+  background: rgba(52, 211, 153, 0.15);
+}
+
+.cand-dir.dir-short {
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.15);
+}
+
+.cand-badge {
+  font-size: 9px;
+  font-weight: 600;
+  padding: 2px 5px;
+  border-radius: 3px;
+  width: fit-content;
+  letter-spacing: 0.3px;
+}
+
+.badge-ready {
+  background: rgba(16, 185, 129, 0.2);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.4);
+}
+
+.badge-waiting {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+}
+
+.badge-approaching {
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+}
+
+.badge-watch {
+  background: #14151a;
+  color: #9ca3af;
+  border: 1px solid #23252e;
+}
+
+.badge-neutral {
+  background: #111;
+  color: #777;
+  border: 1px solid #222;
+}
+
+.cand-price {
+  font-size: 12px;
+  font-weight: 600;
+  color: #f3f4f6;
+}
+
+.cand-sub {
+  font-size: 10px;
+  color: #71717a;
+}
+
