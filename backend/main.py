@@ -121,6 +121,15 @@ def _execute_scanner_cycle_background():
     try:
         from pipeline_lock import exclusive_pipeline_lock
         with exclusive_pipeline_lock():
+            import time
+            from pipeline_contract import last_closed_boundary
+            # If triggered right on the candle boundary (e.g. :00, :15, :30, :45),
+            # wait for Bybit to finalize and publish the 15m candle.
+            boundary = last_closed_boundary(time.time(), 900)
+            wait_needed = (boundary + 25) - time.time()
+            if 0 < wait_needed <= 35:
+                time.sleep(wait_needed)
+
             from scanner_pipeline import run_once
             from pipeline_store import STATE_DIR, atomic_json
             from datetime import datetime, timezone
