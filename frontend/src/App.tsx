@@ -1,4 +1,4 @@
-﻿import LoginPage from "./LoginPage";
+import LoginPage from "./LoginPage";
 import SignalResultsPage from "./SignalResultsPage";
 import Phase3Dashboard from "./Phase3Dashboard";
 import TradeJournalPage from "./TradeJournalPage";
@@ -6,7 +6,7 @@ import StrategyBuilderPage from "./StrategyBuilderPage";
 import BotManagerPage from "./BotManagerPage";
 import DemoTradingPage from "./DemoTradingPage";
 import { useEffect as useBackendEffect, useState as useBackendState } from "react";
-import { apiUrl } from "./api";
+import { apiUrl, setAuthToken } from "./api";
 
 import ScannerPage from "./OpportunityScannerPage";
 import TradingTerminalPage from "./TradingTerminalPage";
@@ -695,14 +695,13 @@ function AppLayout() {
   aria-label="TradingOS Logout"
   onClick={async () => {
     try {
-      const response = await fetch(apiUrl("/auth/logout"), {
+      await fetch(apiUrl("/auth/logout"), {
         method: "POST",
         credentials: "include",
-      });
-      if (!response.ok) throw new Error("Logout failed");
+      }).catch(() => {});
+    } finally {
+      setAuthToken(null);
       window.location.assign("/login");
-    } catch {
-      alert("Logout failed. Please check your local backend.");
     }
   }}
   style={{

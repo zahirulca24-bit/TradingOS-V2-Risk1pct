@@ -1,6 +1,6 @@
-﻿import { useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { apiUrl } from "./api";
+import { apiUrl, setAuthToken } from "./api";
 import "./LoginPage.css";
 
 export default function LoginPage() {
@@ -28,6 +28,11 @@ export default function LoginPage() {
           throw new Error("Incorrect password");
         }
         throw new Error("Login failed. Check backend connection.");
+      }
+
+      const data = await response.json().catch(() => ({}));
+      if (data && data.token) {
+        setAuthToken(data.token);
       }
 
       setPassword("");

@@ -36,9 +36,9 @@ async def prevent_anonymous_cloud_data_access(request: Request, call_next):
     on_render = os.environ.get("RENDER", "").lower() in ("true", "1")
     if on_render and request.method != "OPTIONS":
         public_paths = {"/", "/health"}
-        public_prefixes = ("/market/",)
+        public_prefixes = ("/market/", "/auth/")
         path = request.url.path
-        if path not in public_paths and not path.startswith(public_prefixes):
+        if path not in public_paths and not any(path.startswith(p) for p in public_prefixes):
             configured_token = os.environ.get("TRADINGOS_AUTH_TOKEN")
             
             # 1. If an explicit authentication token is configured, enforce token validation
@@ -175,8 +175,6 @@ from journal_api import router as journal_router
 app.include_router(journal_router)
 
 
-# Windows-only local password login.
-# Never expose the local password file on Render.
-if os.environ.get("RENDER", "").lower() not in ("true", "1"):
-    from local_login_api import router as local_login_router
-    app.include_router(local_login_router)
+# Authentication router (supports cloud token validation and local sessions).
+from local_login_api import router as local_login_router
+app.include_router(local_login_router)
