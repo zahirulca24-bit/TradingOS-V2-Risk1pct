@@ -664,22 +664,32 @@ export default function TradingTerminalPage() {
           </div>
           <div className="market-watchlist-subtitle">BYBIT · USDT PERPETUAL</div>
 
-          {watchSymbols.map(s => (
-            <button
-              key={s}
-              className={symbol === s ? "selected" : ""}
-              onClick={() => chooseSymbol(s)}
-            >
-              <span>
-                <strong>{s.replace("USDT", "")}</strong>
-                <small>USDT</small>
-              </span>
-              <span>
-                {symbol === s && last ? last.close.toLocaleString() : "—"}
-                <small>{symbol === s ? "Saved close" : "Select symbol"}</small>
-              </span>
-            </button>
-          ))}
+          {watchSymbols.map(s => {
+            const oppPrice = opportunities.find(o => o.symbol === s)?.price;
+            const displayPrice = symbol === s && last
+              ? last.close.toLocaleString()
+              : (typeof oppPrice === "number" ? oppPrice.toLocaleString() : "—");
+            const priceLabel = symbol === s
+              ? "Active chart"
+              : (typeof oppPrice === "number" ? "Saved close" : "Select symbol");
+
+            return (
+              <button
+                key={s}
+                className={symbol === s ? "selected" : ""}
+                onClick={() => chooseSymbol(s)}
+              >
+                <span>
+                  <strong>{s.replace("USDT", "")}</strong>
+                  <small>USDT</small>
+                </span>
+                <span>
+                  {displayPrice}
+                  <small>{priceLabel}</small>
+                </span>
+              </button>
+            );
+          })}
 
           <div className="market-watchlist-note">
             Prices are saved historical closes, not live quotes.
