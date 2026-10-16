@@ -10,6 +10,7 @@ import { apiUrl, setAuthToken } from "./api";
 
 import ScannerPage from "./OpportunityScannerPage";
 import TradingTerminalPage from "./TradingTerminalPage";
+import SettingsPage from "./SettingsPage";
 import { BrowserRouter, NavLink, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, Search, Radio, ChartCandlestick, Blocks,
@@ -731,7 +732,7 @@ function AppLayout() {
             <Route path="/reports" element={<TradeJournalPage initialTab="reports" />} />
             <Route path="/replay" element={<SimplePage eyebrow="HISTORICAL VERIFICATION" title="Replay Lab" description="Check whether your bot detects market structure correctly on historical data." emptyTitle="Replay engine not connected" emptyDescription="Replay will reveal candles step by step without letting strategy logic see future data." icon={Clock3} />} />
 
-            <Route path="/settings" element={<SimplePage eyebrow="APPLICATION CONFIGURATION" title="Settings" description="Bybit Demo API, risk controls, indicators and notification preferences." emptyTitle="Settings module coming next" emptyDescription="Demo credentials will be handled by the backend, never embedded in frontend source code." icon={Settings} />} />
+            <Route path="/settings" element={<SettingsPage />} />
           </Routes>
         </main>
       </div>

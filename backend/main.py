@@ -238,3 +238,7 @@ app.include_router(journal_router)
 # Authentication router (supports cloud token validation and local sessions).
 from local_login_api import router as local_login_router
 app.include_router(local_login_router)
+
+# Settings & System preferences router
+from settings_api import router as settings_router
+app.include_router(settings_router)
