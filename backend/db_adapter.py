@@ -258,7 +258,8 @@ def normalize_postgres_dsn(dsn: str) -> str:
 
 def adapt_sql_for_postgres(sql: str) -> str:
     """Translate SQLite parameter markers and conflict syntax to PostgreSQL."""
-    clean_sql = sql.replace("?", "%s")
+    clean_sql = sql.replace("'BLOCKED_%'", "'BLOCKED_%%'")
+    clean_sql = clean_sql.replace("?", "%s")
     # Convert SQLite INSERT OR IGNORE to PostgreSQL ON CONFLICT DO NOTHING
     if "INSERT OR IGNORE INTO journal_cycles" in clean_sql:
         clean_sql = clean_sql.replace("INSERT OR IGNORE INTO journal_cycles", "INSERT INTO journal_cycles")
