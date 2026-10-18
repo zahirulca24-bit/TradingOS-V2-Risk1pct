@@ -75,7 +75,15 @@ def publish(reports):
     ident = reports["scanner"]["cycle_id"]
     cycle_dir = _cycle_id_to_dir(ident)
     if cycle_dir.exists():
-        raise FileExistsError("Cycle already exists; refusing overwrite")
+        # Safe/idempotent handling: if this cycle directory already exists and is complete,
+        # ensure database and manifest are consistent without raising unhandled FileExistsError
+        try:
+            from db_adapter import save_pipeline_cycle
+            save_pipeline_cycle(reports)
+        except Exception as exc:
+            print("ERROR: Durable database pipeline cycle storage failed:", type(exc).__name__, exc)
+            raise
+        return ident
     cycles_root = cycle_dir.parent
     cycles_root.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix="staging-", dir=str(cycles_root)))
@@ -89,25 +97,31 @@ def publish(reports):
     finally:
         if staging.exists():
             shutil.rmtree(staging)
+    # 1. Persist in durable database (Neon PostgreSQL or SQLite pipeline_cycles table)
+    # Database persistence happens before committing manifest to avoid disk-committed/db-missing inconsistency
+    try:
+        from db_adapter import save_pipeline_cycle
+        save_pipeline_cycle(reports)
+    except Exception as exc:
+        print("ERROR: Durable database pipeline cycle storage failed:", type(exc).__name__, exc)
+        if cycle_dir.exists():
+            shutil.rmtree(cycle_dir, ignore_errors=True)
+        raise
+
+    # 2. Commit manifest after durable database save succeeds
     atomic_json(MANIFEST, {
         "cycle_id": ident,
         "candle_close_utc": reports["scanner"]["candle_close_utc"],
         "committed_at": datetime.now(timezone.utc).isoformat(),
         "status": "success",
     })
-    # Older UI endpoints keep working, and both are read via the commit-aware
-    # API patch in Phase 2. Legacy JSON mirrors are for command-line users.
+
+    # 3. Compatibility mirrors updated after committing
     for key, filename in NAMES.items():
         try:
             atomic_json(BASE / filename, reports[key])
         except OSError as exc:
             print("WARNING: Legacy mirror could not update:", filename, type(exc).__name__)
-    # Persist in durable database (Neon PostgreSQL or SQLite pipeline_cycles table)
-    try:
-        from db_adapter import save_pipeline_cycle
-        save_pipeline_cycle(reports)
-    except Exception as exc:
-        print("WARNING: Durable database pipeline cycle storage failed:", type(exc).__name__, exc)
 
     try:
         from journal_db import ingest_cycle
@@ -135,18 +149,22 @@ def read_committed():
             return cycle_data
         return None
 
-    # Fallback to local files (SQLite / local Windows)
+    # SQLite / local Windows: check database first for consistency
+    cycle_data = load_committed_pipeline_cycle()
+    if cycle_data is not None:
+        validate_reports({k: cycle_data[k] for k in NAMES})
+        return cycle_data
+
+    # Fallback to local manifest and files if db empty
     if not MANIFEST.is_file():
-        cycle_data = load_committed_pipeline_cycle()
-        if cycle_data is not None:
-            validate_reports({k: cycle_data[k] for k in NAMES})
-            return cycle_data
         return None
 
     manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
     if manifest.get("status") != "success":
         raise ValueError("Cycle not committed")
     cycle_dir = _cycle_id_to_dir(manifest["cycle_id"])
+    if not cycle_dir.is_dir():
+        return None
     reports = {key: json.loads((cycle_dir / filename).read_text(encoding="utf-8")) for key, filename in NAMES.items()}
     validate_reports(reports)
     if manifest["cycle_id"] != reports["scanner"]["cycle_id"] or manifest.get("candle_close_utc") != reports["scanner"]["candle_close_utc"]:
@@ -155,16 +173,7 @@ def read_committed():
 
 
 def read_pipeline_status():
-    from db_adapter import get_active_engine, load_pipeline_last_attempt
-    engine = get_active_engine()
-    if engine == "postgres":
-        cycle = read_committed()
-        last = load_pipeline_last_attempt()
-        return {
-            "last_committed_cycle": cycle["manifest"] if cycle else None,
-            "last_attempt": last,
-            "trading_enabled": False,
-        }
+    from db_adapter import load_pipeline_last_attempt
     cycle = read_committed()
     path = STATE_DIR / "last_attempt.json"
     last = None

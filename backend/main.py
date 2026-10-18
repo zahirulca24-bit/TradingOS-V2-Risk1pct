@@ -35,7 +35,7 @@ if env_origins:
 async def prevent_anonymous_cloud_data_access(request: Request, call_next):
     on_render = os.environ.get("RENDER", "").lower() in ("true", "1")
     if on_render and request.method != "OPTIONS":
-        public_paths = {"/", "/health", "/scanner/trigger"}
+        public_paths = {"/", "/health", "/health/operational"}
         public_prefixes = ("/market/", "/auth/")
         path = request.url.path
         if path not in public_paths and not any(path.startswith(p) for p in public_prefixes):
@@ -87,11 +87,29 @@ def home():
 # Health check endpoint
 @app.get("/health")
 def health():
+    db_ok = False
+    try:
+        from db_adapter import get_db_connection
+        with get_db_connection() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT 1")
+            db_ok = True
+    except Exception:
+        db_ok = False
+
+    bybit_ok = False
+    try:
+        from universe_candles import fetch_klines
+        k = fetch_klines("BTCUSDT", "15", limit=1)
+        bybit_ok = bool(k)
+    except Exception:
+        bybit_ok = False
+
     return {
         "status": "online",
         "service": "TradingOS V2 Backend",
-        "bybit_connected": False,
-        "database_connected": False,
+        "bybit_connected": bybit_ok,
+        "database_connected": db_ok,
         "trading_enabled": False
     }
 
@@ -117,7 +135,17 @@ from scanner_api import router as scanner_router
 app.include_router(scanner_router)
 
 
+import threading
+_scan_running_lock = threading.Lock()
+_scan_is_running = False
+
+
 def _execute_scanner_cycle_background():
+    global _scan_is_running
+    if not _scan_running_lock.acquire(blocking=False):
+        print("BACKGROUND SCAN SKIPPED: Concurrent background execution already in progress", flush=True)
+        return
+    _scan_is_running = True
     try:
         from pipeline_lock import exclusive_pipeline_lock
         with exclusive_pipeline_lock():
@@ -162,10 +190,22 @@ def _execute_scanner_cycle_background():
                 pass
         except Exception:
             pass
+    finally:
+        _scan_is_running = False
+        _scan_running_lock.release()
 
 
 @app.api_route("/scanner/trigger", methods=["GET", "POST"])
 def trigger_scanner(background_tasks: BackgroundTasks):
+    global _scan_is_running
+    if _scan_is_running:
+        return JSONResponse(
+            status_code=409,
+            content={
+                "status": "busy",
+                "message": "Scanner cycle is already running in background."
+            }
+        )
     background_tasks.add_task(_execute_scanner_cycle_background)
     return {
         "status": "accepted",

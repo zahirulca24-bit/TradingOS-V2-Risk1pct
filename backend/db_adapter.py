@@ -504,6 +504,20 @@ def save_pipeline_cycle(reports: Dict[str, Any], dsn: Optional[str] = None, db_p
     with get_db_connection(db_path=db_path, dsn=dsn) as conn:
         cur = conn.cursor()
 
+        # Check existing active pointer to ensure monotonic pointer advancement
+        placeholder = "%s" if engine == "postgres" else "?"
+        cur.execute(f"SELECT value FROM pipeline_meta WHERE key = {placeholder}", ("current_cycle_id",))
+        existing_meta = cur.fetchone()
+        should_update_pointer = True
+        if existing_meta and existing_meta.get("value"):
+            try:
+                curr_manifest = json.loads(existing_meta["value"])
+                # Don't overwrite newer cycle pointer with an older one
+                if curr_manifest.get("candle_close_utc") and curr_manifest["candle_close_utc"] > close_utc:
+                    should_update_pointer = False
+            except Exception:
+                pass
+
         # Insert into pipeline_cycles
         if engine == "postgres":
             cur.execute("""
@@ -520,12 +534,13 @@ def save_pipeline_cycle(reports: Dict[str, Any], dsn: Optional[str] = None, db_p
                 json.dumps(reports["opportunities"]),
                 now_iso
             ))
-            # Update active cycle pointer in pipeline_meta
-            cur.execute("""
-                INSERT INTO pipeline_meta (key, value, updated_at)
-                VALUES (%s, %s, %s)
-                ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
-            """, ("current_cycle_id", json.dumps(manifest), now_iso))
+            # Update active cycle pointer in pipeline_meta safely
+            if should_update_pointer:
+                cur.execute("""
+                    INSERT INTO pipeline_meta (key, value, updated_at)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+                """, ("current_cycle_id", json.dumps(manifest), now_iso))
         else:
             cur.execute("""
                 INSERT OR IGNORE INTO pipeline_cycles (
@@ -540,11 +555,12 @@ def save_pipeline_cycle(reports: Dict[str, Any], dsn: Optional[str] = None, db_p
                 json.dumps(reports["opportunities"]),
                 now_iso
             ))
-            cur.execute("""
-                INSERT INTO pipeline_meta (key, value, updated_at)
-                VALUES (?, ?, ?)
-                ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
-            """, ("current_cycle_id", json.dumps(manifest), now_iso))
+            if should_update_pointer:
+                cur.execute("""
+                    INSERT INTO pipeline_meta (key, value, updated_at)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+                """, ("current_cycle_id", json.dumps(manifest), now_iso))
 
         conn.commit()
 

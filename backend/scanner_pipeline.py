@@ -221,6 +221,8 @@ def run_once(*, now=None, quiet=False):
         neutral=neutral,
     )
     published_id = publish(reports)
+    if not published_id or published_id != cycle_id:
+        raise RuntimeError(f"Cycle publication verification failed: expected {cycle_id}, got {published_id}")
     print("PHASE 2 COMMITTED", published_id, flush=True)
     print("Examined:", examined, "Directional:", len(chosen), "Neutral:", neutral, flush=True)
     print("Top 10:", reports["opportunities"]["top_count"], "Ready:", reports["trade_plans"]["ready_count"], flush=True)
