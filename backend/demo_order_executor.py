@@ -258,3 +258,173 @@ def execute_demo_plans(reports: Dict[str, Any]) -> List[Dict[str, Any]]:
             })
 
     return executions
+
+
+def place_single_demo_order(
+    symbol: str,
+    direction: str,
+    entry_reference: Optional[float] = None,
+    sl: Optional[float] = None,
+    tp: Optional[float] = None,
+    rr: Optional[float] = None,
+    source: str = "MANUAL_TERMINAL"
+) -> Dict[str, Any]:
+    """Places a single 1% risk market order on Bybit Demo with attached SL and TP."""
+    symbol = symbol.strip().upper()
+    direction = direction.strip().upper()
+    if direction not in ("LONG", "SHORT"):
+        raise ValueError("Direction must be LONG or SHORT")
+
+    account = read_demo_account()
+    total_equity = account.get("total_equity") or 0.0
+    occupied_slots = account.get("occupied_slots") or 0
+    remaining_slots = account.get("remaining_slots") or 0
+
+    if total_equity <= 0:
+        raise RuntimeError("Invalid demo account equity or Bybit disconnected")
+
+    if remaining_slots <= 0 or occupied_slots >= 3:
+        raise RuntimeError(f"Risk capacity reached: {occupied_slots}/3 slots already occupied")
+
+    specs = get_cached_instrument_specs(symbol)
+    if not specs:
+        raise RuntimeError(f"Could not load instrument specs for {symbol} from Bybit")
+
+    qty_step = Decimal(str(specs["qty_step"]))
+    min_qty = Decimal(str(specs["min_qty"]))
+    max_qty = Decimal(str(specs["max_qty"]))
+    min_notional = Decimal(str(specs.get("min_notional") or "5"))
+    tick_size = Decimal(str(specs["tick_size"]))
+
+    risk_budget_usd = round(total_equity * 0.01, 2)
+    d_budget = Decimal(str(risk_budget_usd))
+
+    if not entry_reference or entry_reference <= 0:
+        from universe_candles import fetch_klines
+        klines = fetch_klines(symbol, "15", limit=1)
+        if not klines:
+            raise RuntimeError(f"Cannot fetch current market price for {symbol}")
+        entry_reference = float(klines[-1]["close"])
+
+    d_entry = Decimal(str(entry_reference))
+
+    if not sl or sl <= 0:
+        sl_pct = Decimal("0.012")
+        d_sl = d_entry * (Decimal("1") - sl_pct) if direction == "LONG" else d_entry * (Decimal("1") + sl_pct)
+    else:
+        d_sl = Decimal(str(sl))
+
+    if not tp or tp <= 0:
+        tp_pct = Decimal("0.036")
+        d_tp = d_entry * (Decimal("1") + tp_pct) if direction == "LONG" else d_entry * (Decimal("1") - tp_pct)
+    else:
+        d_tp = Decimal(str(tp))
+
+    price_loss_per_unit = abs(d_entry - d_sl)
+    if price_loss_per_unit <= 0:
+        raise ValueError("Stop loss cannot equal entry price")
+
+    cost_per_unit = (d_entry + d_sl) * Decimal("0.0011")
+    unit_loss = price_loss_per_unit + cost_per_unit
+
+    raw_qty = d_budget / unit_loss
+    quantized_qty = quantize_value(raw_qty, qty_step, rounding=ROUND_DOWN)
+
+    if quantized_qty < min_qty or quantized_qty > max_qty:
+        raise ValueError(f"Calculated quantity {quantized_qty} is outside Bybit limits [{min_qty}, {max_qty}]")
+
+    notional = quantized_qty * d_entry
+    if notional < min_notional:
+        raise ValueError(f"Position notional ${float(notional):.2f} is below Bybit minimum ${float(min_notional):.2f}")
+
+    quantized_sl = quantize_value(d_sl, tick_size, rounding=ROUND_HALF_UP)
+    quantized_tp = quantize_value(d_tp, tick_size, rounding=ROUND_HALF_UP)
+
+    qty_str = format_step_string(quantized_qty, qty_step)
+    sl_str = format_step_string(quantized_sl, tick_size)
+    tp_str = format_step_string(quantized_tp, tick_size)
+
+    side = "Buy" if direction == "LONG" else "Sell"
+    ts_now = int(time.time())
+    order_link_id = f"term_{ts_now}_{symbol}"
+
+    key = os.getenv("BYBIT_API_KEY", "").strip()
+    secret = os.getenv("BYBIT_API_SECRET", "").strip()
+    session = HTTP(demo=True, api_key=key, api_secret=secret)
+
+    order_params = {
+        "category": "linear",
+        "symbol": symbol,
+        "side": side,
+        "orderType": "Market",
+        "qty": qty_str,
+        "takeProfit": tp_str,
+        "stopLoss": sl_str,
+        "tpOrderType": "Market",
+        "slOrderType": "Market",
+        "tpslMode": "Full",
+        "timeInForce": "GTC",
+        "positionIdx": 0,
+        "orderLinkId": order_link_id,
+    }
+
+    resp = session.place_order(**order_params)
+    ret_code = resp.get("retCode", -1)
+    ret_msg = resp.get("retMsg", "Unknown response")
+    result_data = resp.get("result", {})
+    bybit_order_id = result_data.get("orderId", "")
+
+    calc_rr = rr if (rr and rr > 0) else round(float(abs(d_tp - d_entry) / abs(d_entry - d_sl)), 2)
+
+    exec_record = {
+        "cycle_id": f"MANUAL_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
+        "symbol": symbol,
+        "direction": direction,
+        "order_type": "Market",
+        "qty": qty_str,
+        "entry_price": float(d_entry),
+        "sl": float(quantized_sl),
+        "tp": float(quantized_tp),
+        "rr": calc_rr,
+        "risk_budget_usd": risk_budget_usd,
+        "bybit_order_id": bybit_order_id,
+        "order_link_id": order_link_id,
+        "status": "FILLED" if ret_code == 0 else "FAILED",
+        "error_message": None if ret_code == 0 else f"{ret_code}: {ret_msg}",
+    }
+    save_demo_execution(exec_record)
+
+    if ret_code != 0:
+        raise RuntimeError(f"Bybit rejected order: {ret_msg} (code {ret_code})")
+
+    icon = "🟢" if direction == "LONG" else "🔴"
+    tg_msg = (
+        f"⚡ <b>TERMINAL 1-CLICK DEMO ORDER EXECUTED</b> ⚡\n\n"
+        f"🪙 <b>Pair:</b> #{symbol} ({direction} {icon})\n"
+        f"⚡ <b>Order Type:</b> Market Order (Interactive Terminal)\n"
+        f"📦 <b>Quantity:</b> <code>{qty_str}</code>\n"
+        f"📍 <b>Entry Price:</b> <code>~${float(d_entry):,.4f}</code>\n"
+        f"🛑 <b>Stop Loss:</b> <code>${float(quantized_sl):,.4f}</code>\n"
+        f"🎯 <b>Take Profit:</b> <code>${float(quantized_tp):,.4f}</code>\n"
+        f"⚖️ <b>Risk / Reward:</b> <code>1 : {calc_rr:.2f}</code>\n"
+        f"🛡️ <b>Risk Budget:</b> <code>${risk_budget_usd:.2f} USD (1.0% Equity)</code>\n"
+        f"🆔 <b>Bybit Order ID:</b> <code>{bybit_order_id}</code>\n\n"
+        f"🌐 <b>Account:</b> Bybit Demo Account"
+    )
+    send_telegram_message(tg_msg, parse_mode="HTML")
+
+    return {
+        "status": "success",
+        "symbol": symbol,
+        "direction": direction,
+        "order_id": bybit_order_id,
+        "order_link_id": order_link_id,
+        "qty": qty_str,
+        "entry": float(d_entry),
+        "sl": float(quantized_sl),
+        "tp": float(quantized_tp),
+        "rr": calc_rr,
+        "risk_usd": risk_budget_usd,
+        "message": f"Successfully placed {direction} market order for {qty_str} {symbol} on Bybit Demo!",
+    }
+

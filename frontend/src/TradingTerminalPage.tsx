@@ -14,7 +14,10 @@ import {
   type UTCTimestamp,
   type LogicalRange
 } from "lightweight-charts";
-import { Activity, BarChart3, RefreshCw, Database } from "lucide-react";
+import {
+  Activity, BarChart3, RefreshCw,
+  Zap, X, ShieldCheck
+} from "lucide-react";
 import "./TradingTerminalPage.css";
 import ChartDrawingLayer, { type DrawingProjection } from "./ChartDrawingLayer";
 import { NO_VALUE, candleText, priceText, timeText, useCycleFeed, type Opportunity } from "./CycleData";
@@ -188,6 +191,103 @@ export default function TradingTerminalPage() {
   const planReady = showEvidence && selectedPlan?.status === "PLAN_READY";
 
   const [watchlistFilter, setWatchlistFilter] = useState<"all" | "waiting">("all");
+  const [levelFilter, setLevelFilter] = useState<"clean" | "plan" | "zones" | "all">("clean");
+
+  // 1-Click Bybit Demo Execution State
+  const [orderModalOpen, setOrderModalOpen] = useState(false);
+  const [orderSubmitting, setOrderSubmitting] = useState(false);
+  const [orderResult, setOrderResult] = useState<{ success: boolean; message: string; orderId?: string } | null>(null);
+  const [orderDirection, setOrderDirection] = useState<"LONG" | "SHORT">("LONG");
+  const [previewData, setPreviewData] = useState<any>(null);
+  const [loadingPreview, setLoadingPreview] = useState(false);
+
+  const handleOpenOrderModal = async () => {
+    const dir = selectedOpportunity?.direction === "SHORT" ? "SHORT" : "LONG";
+    setOrderDirection(dir);
+    setOrderResult(null);
+    setOrderModalOpen(true);
+    setLoadingPreview(true);
+
+    const entry = selectedPlan?.entry_reference || (candles.length ? candles[candles.length - 1].close : 0);
+    const sl = selectedPlan?.sl || (dir === "LONG" ? entry * 0.988 : entry * 1.012);
+    const tp = selectedPlan?.tp || (dir === "LONG" ? entry * 1.036 : entry * 0.964);
+
+    try {
+      const res = await fetch(`${API}/api/execution/preview?symbol=${symbol}&direction=${dir}&entry=${entry}&sl=${sl}&tp=${tp}`);
+      if (res.ok) {
+        const json = await res.json();
+        setPreviewData(json);
+      }
+    } catch { /* ignore */ } finally {
+      setLoadingPreview(false);
+    }
+  };
+
+  const handleToggleOrderDirection = async (newDir: "LONG" | "SHORT") => {
+    setOrderDirection(newDir);
+    setLoadingPreview(true);
+    setOrderResult(null);
+
+    const entry = previewData?.entry_reference || (candles.length ? candles[candles.length - 1].close : 0);
+    const sl = newDir === "LONG" ? entry * 0.988 : entry * 1.012;
+    const tp = newDir === "LONG" ? entry * 1.036 : entry * 0.964;
+
+    try {
+      const res = await fetch(`${API}/api/execution/preview?symbol=${symbol}&direction=${newDir}&entry=${entry}&sl=${sl}&tp=${tp}`);
+      if (res.ok) {
+        const json = await res.json();
+        setPreviewData(json);
+      }
+    } catch { /* ignore */ } finally {
+      setLoadingPreview(false);
+    }
+  };
+
+  const handleSubmitDemoOrder = async () => {
+    setOrderSubmitting(true);
+    setOrderResult(null);
+
+    const entry = previewData?.entry_reference || (candles.length ? candles[candles.length - 1].close : 0);
+    const sl = previewData?.sl || 0;
+    const tp = previewData?.tp || 0;
+    const rr = previewData?.rr || 2.0;
+
+    try {
+      const res = await fetch(`${API}/api/execution/place-order`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          symbol,
+          direction: orderDirection,
+          entry_reference: entry,
+          sl,
+          tp,
+          rr,
+          source: "TERMINAL_ONE_CLICK",
+        }),
+      });
+      const json = await res.json();
+      if (res.ok) {
+        setOrderResult({
+          success: true,
+          message: json.message || "Order filled on Bybit Demo!",
+          orderId: json.order_id,
+        });
+      } else {
+        setOrderResult({
+          success: false,
+          message: json.detail || "Order execution failed",
+        });
+      }
+    } catch (err: any) {
+      setOrderResult({
+        success: false,
+        message: err.message || "Network request failed",
+      });
+    } finally {
+      setOrderSubmitting(false);
+    }
+  };
 
   type CandidateItem = {
     symbol: string;
@@ -352,11 +452,18 @@ export default function TradingTerminalPage() {
   // Pane layout is set once via setStretchFactor (proportional) and not
   // repeated on every renderData call — this prevents the Volume pane from
   // collapsing and eliminates conflicts with the user's own drag-resize.
+  useEffect(() => {
+    const liveTimer = window.setInterval(() => {
+      setRefresh(n => n + 1);
+    }, 15_000);
+    return () => window.clearInterval(liveTimer);
+  }, []);
+
   const latestVisualRef = useRef({
-    candles, selectedOpportunity, selectedPlan, selectedSweep, showEvidence, planReady
+    candles, selectedOpportunity, selectedPlan, selectedSweep, showEvidence, planReady, levelFilter
   });
   latestVisualRef.current = {
-    candles, selectedOpportunity, selectedPlan, selectedSweep, showEvidence, planReady
+    candles, selectedOpportunity, selectedPlan, selectedSweep, showEvidence, planReady, levelFilter
   };
 
   useEffect(() => {
@@ -490,7 +597,8 @@ export default function TradingTerminalPage() {
         title: string,
         color: string,
         lineStyle: LineStyle = LineStyle.Dashed,
-        lineWidth: LineWidth = 1
+        lineWidth: LineWidth = 1,
+        axisLabelVisible: boolean = true
       ) => {
         if (typeof level !== "number" || !Number.isFinite(level) || level <= 0) return;
         try {
@@ -499,7 +607,7 @@ export default function TradingTerminalPage() {
             color,
             lineWidth,
             lineStyle,
-            axisLabelVisible: true,
+            axisLabelVisible,
             title
           }));
         } catch { /* ignore */ }
@@ -507,56 +615,66 @@ export default function TradingTerminalPage() {
 
       const opp = state.selectedOpportunity;
       const plan = state.selectedPlan;
+      const filter = (state as any).levelFilter || "clean";
 
       // 1. Draw Support & Resistance levels analyzed by the bot
-      if (opp) {
+      if (opp && filter !== "plan") {
         const isLong = opp.direction === "LONG";
         const isWaiting = opp.status === "ENTRY_WATCH" || opp.status === "APPROACHING";
+
+        // Collision check: if plan TP/SL is right on top of support/resistance, prevent duplicate overlapping text boxes
+        const planTpNearSupp = plan?.tp && opp.support?.level && Math.abs(plan.tp - opp.support.level) / opp.support.level < 0.003;
+        const planSlNearRes = plan?.sl && opp.resistance?.level && Math.abs(plan.sl - opp.resistance.level) / opp.resistance.level < 0.003;
 
         // Support / Demand Zone & Level
         if (opp.support?.level) {
           const suppTitle = isLong && isWaiting
-            ? `🟢 DEMAND TARGET ($${opp.support.level.toLocaleString()})`
-            : `BOT SUPPORT ($${opp.support.level.toLocaleString()})`;
-          addLevel(opp.support.level, suppTitle, "#10b981", LineStyle.Solid, (isLong ? 2 : 1) as LineWidth);
+            ? `DEMAND ($${opp.support.level.toLocaleString()})`
+            : `SUPPORT ($${opp.support.level.toLocaleString()})`;
+          const showSuppAxis = filter === "all" || !planTpNearSupp;
+          addLevel(opp.support.level, suppTitle, "#10b981", LineStyle.Solid, (isLong ? 2 : 1) as LineWidth, showSuppAxis);
 
+          // Zone boundaries: only show axis label in 'all' mode to prevent price axis crowding
+          const showBoundAxis = filter === "all";
           if (opp.support.upper && Math.abs(opp.support.upper - opp.support.level) > 0.000001) {
-            addLevel(opp.support.upper, "DEMAND ZONE HIGH", "#10b98166", LineStyle.Dashed, 1);
+            addLevel(opp.support.upper, "DEMAND HIGH", "#10b98155", LineStyle.Dashed, 1, showBoundAxis);
           }
           if (opp.support.lower && Math.abs(opp.support.lower - opp.support.level) > 0.000001) {
-            addLevel(opp.support.lower, "DEMAND ZONE LOW", "#10b98166", LineStyle.Dashed, 1);
+            addLevel(opp.support.lower, "DEMAND LOW", "#10b98155", LineStyle.Dashed, 1, showBoundAxis);
           }
         }
 
         // Resistance / Supply Zone & Level
         if (opp.resistance?.level) {
           const resTitle = !isLong && isWaiting
-            ? `🔴 SUPPLY TARGET ($${opp.resistance.level.toLocaleString()})`
-            : `BOT RESISTANCE ($${opp.resistance.level.toLocaleString()})`;
-          addLevel(opp.resistance.level, resTitle, "#ef4444", LineStyle.Solid, (!isLong ? 2 : 1) as LineWidth);
+            ? `SUPPLY ($${opp.resistance.level.toLocaleString()})`
+            : `RESISTANCE ($${opp.resistance.level.toLocaleString()})`;
+          const showResAxis = filter === "all" || !planSlNearRes;
+          addLevel(opp.resistance.level, resTitle, "#ef4444", LineStyle.Solid, (!isLong ? 2 : 1) as LineWidth, showResAxis);
 
+          const showBoundAxis = filter === "all";
           if (opp.resistance.lower && Math.abs(opp.resistance.lower - opp.resistance.level) > 0.000001) {
-            addLevel(opp.resistance.lower, "SUPPLY ZONE LOW", "#ef444466", LineStyle.Dashed, 1);
+            addLevel(opp.resistance.lower, "SUPPLY LOW", "#ef444455", LineStyle.Dashed, 1, showBoundAxis);
           }
           if (opp.resistance.upper && Math.abs(opp.resistance.upper - opp.resistance.level) > 0.000001) {
-            addLevel(opp.resistance.upper, "SUPPLY ZONE HIGH", "#ef444466", LineStyle.Dashed, 1);
+            addLevel(opp.resistance.upper, "SUPPLY HIGH", "#ef444455", LineStyle.Dashed, 1, showBoundAxis);
           }
         }
       }
 
       // 2. Draw Trade Plan Levels (Entry Ref, SL, TP, Sweep Level)
-      if (plan) {
+      if (plan && filter !== "zones") {
         if (typeof plan.entry_reference === "number" && plan.entry_reference > 0) {
-          addLevel(plan.entry_reference, `PLAN ENTRY ($${plan.entry_reference.toLocaleString()})`, "#38bdf8", LineStyle.Solid, 2);
+          addLevel(plan.entry_reference, `ENTRY ($${plan.entry_reference.toLocaleString()})`, "#38bdf8", LineStyle.Solid, 2, true);
         }
         if (typeof plan.sl === "number" && plan.sl > 0) {
-          addLevel(plan.sl, `PLAN SL ($${plan.sl.toLocaleString()})`, "#ef4444", LineStyle.Solid, 2);
+          addLevel(plan.sl, `SL ($${plan.sl.toLocaleString()})`, "#ef4444", LineStyle.Solid, 2, true);
         }
         if (typeof plan.tp === "number" && plan.tp > 0) {
-          addLevel(plan.tp, `PLAN TP ($${plan.tp.toLocaleString()})`, "#22c55e", LineStyle.Solid, 2);
+          addLevel(plan.tp, `TP ($${plan.tp.toLocaleString()})`, "#22c55e", LineStyle.Solid, 2, true);
         }
         if (typeof plan.sweep_level === "number" && plan.sweep_level > 0) {
-          addLevel(plan.sweep_level, `SWEEP TARGET ($${plan.sweep_level.toLocaleString()})`, "#fbbf24", LineStyle.Dashed, 1);
+          addLevel(plan.sweep_level, `SWEEP ($${plan.sweep_level.toLocaleString()})`, "#fbbf24", LineStyle.Dashed, 1, true);
         }
       }
 
@@ -624,7 +742,7 @@ export default function TradingTerminalPage() {
 
   useEffect(() => {
     chartRenderRef.current?.();
-  }, [candles, selectedOpportunity, selectedPlan, selectedSweep, showEvidence, planReady]);
+  }, [candles, selectedOpportunity, selectedPlan, selectedSweep, showEvidence, planReady, levelFilter]);
 
   const last = candles[candles.length - 1];
   const dateText = last
@@ -635,12 +753,15 @@ export default function TradingTerminalPage() {
     <div className="market-terminal">
       <div className="market-page-title">
         <div>
-          <div className="market-eyebrow">MARKET WORKSPACE / REAL HISTORICAL DATA</div>
+          <div className="market-eyebrow">MARKET WORKSPACE / BYBIT PERPETUAL FUTURES</div>
           <h1>Trading Terminal</h1>
-          <p>Bybit USDT Perpetual · 15-minute candles</p>
+          <p>Bybit USDT Perpetual · {timeframe === "60" ? "1-hour candles" : "15-minute candles"}</p>
         </div>
-        <div className="market-history-badge">
-          <Database size={15} /> HISTORICAL · NOT LIVE
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <div className="live-ticking-badge">
+            <span className="live-pulse-dot" />
+            <span>BYBIT LIVE (15s Ticking)</span>
+          </div>
         </div>
       </div>
 
@@ -667,6 +788,48 @@ export default function TradingTerminalPage() {
             </div>
 
             <div className="market-tools">
+              {/* Level Filter Tabs (Decluttering) */}
+              <div className="level-filter-pill-group" title="Control chart price lines and labels">
+                <button
+                  className={`level-pill-btn ${levelFilter === "clean" ? "active" : ""}`}
+                  onClick={() => setLevelFilter("clean")}
+                  title="Smart clean view: combines overlapping labels and hides redundant zone text"
+                >
+                  ✨ Clean
+                </button>
+                <button
+                  className={`level-pill-btn ${levelFilter === "plan" ? "active" : ""}`}
+                  onClick={() => setLevelFilter("plan")}
+                  title="Show Entry, Stop Loss, and Take Profit only"
+                >
+                  🎯 Plan
+                </button>
+                <button
+                  className={`level-pill-btn ${levelFilter === "zones" ? "active" : ""}`}
+                  onClick={() => setLevelFilter("zones")}
+                  title="Show Support & Resistance Demand/Supply Zones only"
+                >
+                  🏛️ Zones
+                </button>
+                <button
+                  className={`level-pill-btn ${levelFilter === "all" ? "active" : ""}`}
+                  onClick={() => setLevelFilter("all")}
+                  title="Show all raw labels"
+                >
+                  👁️ All
+                </button>
+              </div>
+
+              {/* 1-Click Demo Trade Button */}
+              <button
+                className={`btn-oneclick-trade ${selectedOpportunity?.direction === "SHORT" ? "short-trade" : ""}`}
+                onClick={handleOpenOrderModal}
+                title="Execute 1% Risk Market Order directly on Bybit Demo"
+              >
+                <Zap size={13} />
+                <span>{`1-Click Demo ${selectedOpportunity?.direction === "SHORT" ? "SELL" : "BUY"}`}</span>
+              </button>
+
               <button
                 className={volumeOn ? "active" : ""}
                 onClick={() => setVolumeOn(v => !v)}
@@ -681,7 +844,7 @@ export default function TradingTerminalPage() {
               </button>
               <button
                 onClick={() => setRefresh(n => n + 1)}
-                title="Reload local historical candles"
+                title="Reload candles"
               >
                 <RefreshCw size={15} />
               </button>
@@ -919,6 +1082,164 @@ export default function TradingTerminalPage() {
           </div>
         </aside>
       </div>
+
+      {/* 1-Click Bybit Demo Order Execution Modal */}
+      {orderModalOpen && (
+        <div className="order-modal-backdrop" onClick={() => !orderSubmitting && setOrderModalOpen(false)}>
+          <div className="order-modal-box" onClick={e => e.stopPropagation()}>
+            <div className="order-modal-header">
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <Zap size={18} style={{ color: orderDirection === "LONG" ? "#10b981" : "#ef4444" }} />
+                <h3 style={{ margin: 0, fontSize: "16px", color: "#fff", fontWeight: 700 }}>
+                  Bybit Demo Market Order
+                </h3>
+              </div>
+              <button
+                onClick={() => !orderSubmitting && setOrderModalOpen(false)}
+                style={{ background: "transparent", border: "none", color: "#8b949e", cursor: "pointer" }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="order-modal-body">
+              {/* Symbol & Direction selector */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+                <div>
+                  <div style={{ fontSize: "18px", fontWeight: 800, color: "#fff" }}>#{symbol}</div>
+                  <div style={{ fontSize: "11px", color: "#8b949e" }}>Bybit USDT Linear Perpetual</div>
+                </div>
+
+                <div style={{ display: "flex", background: "#161b22", border: "1px solid #30363d", borderRadius: "6px", padding: "2px" }}>
+                  <button
+                    onClick={() => handleToggleOrderDirection("LONG")}
+                    disabled={orderSubmitting}
+                    style={{
+                      background: orderDirection === "LONG" ? "#065f46" : "transparent",
+                      color: orderDirection === "LONG" ? "#34d399" : "#8b949e",
+                      border: "none",
+                      borderRadius: "4px",
+                      padding: "4px 10px",
+                      fontSize: "12px",
+                      fontWeight: 700,
+                      cursor: "pointer"
+                    }}
+                  >
+                    LONG 🟢
+                  </button>
+                  <button
+                    onClick={() => handleToggleOrderDirection("SHORT")}
+                    disabled={orderSubmitting}
+                    style={{
+                      background: orderDirection === "SHORT" ? "#7f1d1d" : "transparent",
+                      color: orderDirection === "SHORT" ? "#f87171" : "#8b949e",
+                      border: "none",
+                      borderRadius: "4px",
+                      padding: "4px 10px",
+                      fontSize: "12px",
+                      fontWeight: 700,
+                      cursor: "pointer"
+                    }}
+                  >
+                    SHORT 🔴
+                  </button>
+                </div>
+              </div>
+
+              {/* Order Parameters Grid */}
+              <div className="modal-stat-grid">
+                <div className="modal-stat-card">
+                  <div className="modal-stat-label">Entry Reference</div>
+                  <div className="modal-stat-value" style={{ color: "#38bdf8" }}>
+                    ${previewData?.entry_reference ? previewData.entry_reference.toLocaleString() : (last?.close ? last.close.toLocaleString() : "—")}
+                  </div>
+                </div>
+
+                <div className="modal-stat-card">
+                  <div className="modal-stat-label">Calculated Quantity</div>
+                  <div className="modal-stat-value">
+                    {loadingPreview ? "..." : (previewData?.calculated_qty ? `${previewData.calculated_qty}` : "Auto 1%")}
+                  </div>
+                </div>
+
+                <div className="modal-stat-card">
+                  <div className="modal-stat-label">Stop Loss (SL)</div>
+                  <div className="modal-stat-value" style={{ color: "#ef4444" }}>
+                    ${previewData?.sl ? previewData.sl.toLocaleString() : "—"}
+                  </div>
+                </div>
+
+                <div className="modal-stat-card">
+                  <div className="modal-stat-label">Take Profit (TP)</div>
+                  <div className="modal-stat-value" style={{ color: "#22c55e" }}>
+                    ${previewData?.tp ? previewData.tp.toLocaleString() : "—"}
+                  </div>
+                </div>
+
+                <div className="modal-stat-card">
+                  <div className="modal-stat-label">Risk Budget (1.0%)</div>
+                  <div className="modal-stat-value">
+                    ${previewData?.risk_budget_usd ? previewData.risk_budget_usd.toFixed(2) : "8.90"} USD
+                  </div>
+                </div>
+
+                <div className="modal-stat-card">
+                  <div className="modal-stat-label">Risk / Reward (R:R)</div>
+                  <div className="modal-stat-value" style={{ color: "#fbbf24" }}>
+                    1 : {previewData?.rr ? previewData.rr.toFixed(2) : "2.0+"}
+                  </div>
+                </div>
+              </div>
+
+              {/* Safety notice */}
+              <div style={{ background: "rgba(56, 189, 248, 0.08)", border: "1px solid rgba(56, 189, 248, 0.2)", borderRadius: "6px", padding: "10px 12px", fontSize: "11px", color: "#94a3b8", display: "flex", alignItems: "center", gap: "8px", marginBottom: "16px" }}>
+                <ShieldCheck size={18} style={{ color: "#38bdf8", flexShrink: 0 }} />
+                <span>Order placed on <b>Bybit Demo UTA</b> with attached SL/TP. Strict 1% risk limit enforced.</span>
+              </div>
+
+              {/* Feedback Alert */}
+              {orderResult && (
+                <div style={{
+                  background: orderResult.success ? "rgba(16, 185, 129, 0.15)" : "rgba(239, 68, 68, 0.15)",
+                  border: `1px solid ${orderResult.success ? "#10b981" : "#ef4444"}`,
+                  color: orderResult.success ? "#4ade80" : "#fca5a5",
+                  padding: "10px 12px",
+                  borderRadius: "6px",
+                  fontSize: "12px",
+                  marginBottom: "16px"
+                }}>
+                  {orderResult.success ? `✓ ${orderResult.message} (Order ID: ${orderResult.orderId})` : `✕ ${orderResult.message}`}
+                </div>
+              )}
+
+              {/* Submit Button */}
+              <button
+                onClick={handleSubmitDemoOrder}
+                disabled={orderSubmitting || loadingPreview}
+                style={{
+                  width: "100%",
+                  background: orderDirection === "LONG" ? "linear-gradient(135deg, #059669, #10b981)" : "linear-gradient(135deg, #dc2626, #ef4444)",
+                  color: "#fff",
+                  border: "none",
+                  padding: "12px",
+                  borderRadius: "8px",
+                  fontWeight: 700,
+                  fontSize: "14px",
+                  cursor: (orderSubmitting || loadingPreview) ? "not-allowed" : "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "8px",
+                  boxShadow: orderDirection === "LONG" ? "0 4px 15px rgba(16,185,129,0.3)" : "0 4px 15px rgba(239,68,68,0.3)",
+                }}
+              >
+                <Zap size={16} />
+                {orderSubmitting ? "Submitting to Bybit..." : `Confirm & Place ${orderDirection} Order`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

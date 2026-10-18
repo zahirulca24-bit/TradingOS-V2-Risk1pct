@@ -282,3 +282,8 @@ app.include_router(local_login_router)
 # Settings & System preferences router
 from settings_api import router as settings_router
 app.include_router(settings_router)
+
+# Order execution & live preview router
+from execution_api import router as execution_router
+app.include_router(execution_router)
+
