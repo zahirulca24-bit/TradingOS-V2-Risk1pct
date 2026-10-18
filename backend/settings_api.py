@@ -12,8 +12,9 @@ from typing import Any, Dict
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from db_adapter import get_active_engine, get_db_connection
+from db_adapter import get_active_engine, get_db_connection, get_demo_executions
 from demo_dashboard_api import get_demo_account
+from demo_order_executor import is_demo_execution_enabled
 from telegram_notifier import send_telegram_message
 
 router = APIRouter(prefix="/api/settings", tags=["Settings"])
@@ -96,6 +97,14 @@ def get_settings():
             },
             "midnight_report_time": "12:00 AM Bangladesh Time (18:00 UTC)",
         },
+        "execution": {
+            "demo_execution_enabled": is_demo_execution_enabled(),
+            "execution_mode": "BYBIT_DEMO_MARKET_ORDER",
+            "risk_per_trade_pct": 1.0,
+            "sl_tp_attached": True,
+            "max_slots": 3,
+            "status": "ACTIVE" if is_demo_execution_enabled() else "DISABLED",
+        },
         "database": {
             "engine": "Neon PostgreSQL" if engine == "postgres" else "SQLite (Local)",
             "status": "Connected & Healthy",
@@ -167,3 +176,53 @@ def test_bybit_connection():
             status_code=502,
             detail=f"Bybit API connection failed: {str(exc)[:200]}"
         )
+
+
+@router.post("/toggle-execution")
+def toggle_execution():
+    """Toggle Bybit Demo automated execution ON / OFF."""
+    current = is_demo_execution_enabled()
+    new_state = not current
+    os.environ["BYBIT_DEMO_EXECUTION_ENABLED"] = "true" if new_state else "false"
+
+    # Persist in backend/.env if possible
+    env_path = Path(__file__).resolve().parent / ".env"
+    if env_path.is_file():
+        try:
+            content = env_path.read_text(encoding="utf-8")
+            if "BYBIT_DEMO_EXECUTION_ENABLED" in content:
+                import re
+                content = re.sub(
+                    r"BYBIT_DEMO_EXECUTION_ENABLED=.*",
+                    f"BYBIT_DEMO_EXECUTION_ENABLED={'true' if new_state else 'false'}",
+                    content
+                )
+            else:
+                content += f"\nBYBIT_DEMO_EXECUTION_ENABLED={'true' if new_state else 'false'}\n"
+            env_path.write_text(content, encoding="utf-8")
+        except Exception:
+            pass
+
+    status_str = "ENABLED (Active Bybit Demo Execution)" if new_state else "DISABLED (Read-Only Mode)"
+    return {
+        "status": "success",
+        "demo_execution_enabled": new_state,
+        "message": f"Demo execution is now {status_str}.",
+    }
+
+
+@router.get("/executions")
+def get_recent_executions(limit: int = 30):
+    """Retrieve recent Bybit Demo order execution history."""
+    try:
+        return {
+            "status": "success",
+            "executions": get_demo_executions(limit=limit),
+        }
+    except Exception as exc:
+        return {
+            "status": "success",
+            "executions": [],
+            "note": str(exc),
+        }
+

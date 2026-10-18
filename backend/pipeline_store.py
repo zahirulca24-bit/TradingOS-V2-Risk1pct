@@ -135,6 +135,12 @@ def publish(reports):
     except Exception as exc:
         print("WARNING: Telegram notification dispatch failed:", type(exc).__name__, exc)
 
+    try:
+        from demo_order_executor import execute_demo_plans
+        execute_demo_plans(reports)
+    except Exception as exc:
+        print("WARNING: Demo order execution failed:", type(exc).__name__, exc)
+
     return ident
 
 

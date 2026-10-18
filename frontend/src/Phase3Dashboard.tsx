@@ -491,8 +491,8 @@ export default function Phase3Dashboard() {
             </div>
             <div style={{ display: "flex", justifyContent: "space-between" }}>
               <span style={detail}>Execution Status:</span>
-              <span style={{ fontSize: 11, fontWeight: 700, color: "#f87171" }}>
-                DISABLED / NO ORDERS
+              <span style={{ fontSize: 11, fontWeight: 700, color: ((account as any)?.demo_execution_enabled || (account as any)?.execution_status?.includes("ACTIVE")) ? "#4ade80" : "#f87171" }}>
+                {(account as any)?.execution_status || "DISABLED / NO ORDERS"}
               </span>
             </div>
             <div style={{ ...detail, marginTop: 4, borderTop: "1px solid #222", paddingTop: 8 }}>
@@ -509,21 +509,21 @@ export default function Phase3Dashboard() {
       <section className="panel" style={{ marginTop: 19 }}>
         <div className="panel-header">
           <div>
-            <h2>Dry-Run Position Sizing & Safety Preview (P5)</h2>
+            <h2>Position Sizing & Order Execution (P5)</h2>
             <p>
-              Decimal-safe 1% sizing with modeled fees and slippage · Instrument filters applied · DRY RUN ONLY
+              Decimal-safe 1% sizing with modeled fees and slippage · Bybit Demo Market Order execution
             </p>
           </div>
           <span
             className="outline-pill"
             style={{
               fontSize: 10,
-              color: "#fbbf24",
-              borderColor: "rgba(245,158,11,0.3)",
-              background: "rgba(245,158,11,0.06)"
+              color: ((account as any)?.demo_execution_enabled || (account as any)?.execution_status?.includes("ACTIVE")) ? "#34d399" : "#fbbf24",
+              borderColor: ((account as any)?.demo_execution_enabled || (account as any)?.execution_status?.includes("ACTIVE")) ? "rgba(52,211,153,0.3)" : "rgba(245,158,11,0.3)",
+              background: ((account as any)?.demo_execution_enabled || (account as any)?.execution_status?.includes("ACTIVE")) ? "rgba(52,211,153,0.06)" : "rgba(245,158,11,0.06)"
             }}
           >
-            ORDER_EXECUTION_DISABLED
+            {((account as any)?.demo_execution_enabled || (account as any)?.execution_status?.includes("ACTIVE")) ? "BYBIT_DEMO_EXECUTION_ACTIVE" : "ORDER_EXECUTION_DISABLED"}
           </span>
         </div>
 

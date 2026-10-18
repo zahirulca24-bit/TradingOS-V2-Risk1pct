@@ -34,7 +34,7 @@ class DirectApiEndpointAuditTests(unittest.TestCase):
     def test_account_endpoint(self):
         data = get_demo_account()
         self.assertEqual(data["environment"], "BYBIT_DEMO")
-        self.assertEqual(data["execution_status"], "DISABLED / NO ORDERS")
+        self.assertIn(data["execution_status"], ["DISABLED / NO ORDERS", "ACTIVE / BYBIT DEMO (1% RISK)"])
         self.assertEqual(data["max_open_and_pending"], 3)
         self.assertFalse(data["trading_enabled"])
 

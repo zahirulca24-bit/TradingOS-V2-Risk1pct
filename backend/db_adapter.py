@@ -128,6 +128,27 @@ CREATE TABLE IF NOT EXISTS pipeline_meta (
     value TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS demo_executions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    cycle_id TEXT NOT NULL,
+    symbol TEXT NOT NULL,
+    direction TEXT NOT NULL,
+    order_type TEXT NOT NULL,
+    qty TEXT NOT NULL,
+    entry_price REAL,
+    sl REAL NOT NULL,
+    tp REAL NOT NULL,
+    rr REAL NOT NULL,
+    risk_budget_usd REAL NOT NULL,
+    bybit_order_id TEXT,
+    order_link_id TEXT UNIQUE,
+    status TEXT NOT NULL,
+    error_message TEXT,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_demo_executions_cycle ON demo_executions(cycle_id);
+CREATE INDEX IF NOT EXISTS idx_demo_executions_symbol ON demo_executions(symbol);
 """
 
 POSTGRES_SCHEMA_SQL = """
@@ -219,6 +240,27 @@ CREATE TABLE IF NOT EXISTS pipeline_meta (
     value TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS demo_executions (
+    id BIGSERIAL PRIMARY KEY,
+    cycle_id VARCHAR(32) NOT NULL,
+    symbol VARCHAR(32) NOT NULL,
+    direction VARCHAR(16) NOT NULL,
+    order_type VARCHAR(16) NOT NULL,
+    qty VARCHAR(32) NOT NULL,
+    entry_price DOUBLE PRECISION,
+    sl DOUBLE PRECISION NOT NULL,
+    tp DOUBLE PRECISION NOT NULL,
+    rr DOUBLE PRECISION NOT NULL,
+    risk_budget_usd DOUBLE PRECISION NOT NULL,
+    bybit_order_id VARCHAR(64),
+    order_link_id VARCHAR(64) UNIQUE,
+    status VARCHAR(32) NOT NULL,
+    error_message TEXT,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_demo_executions_cycle ON demo_executions(cycle_id);
+CREATE INDEX IF NOT EXISTS idx_demo_executions_symbol ON demo_executions(symbol);
 """
 
 
@@ -673,3 +715,78 @@ def postgres_distributed_lock(dsn: Optional[str] = None, lock_key: int = PIPELIN
             pass
         cur.close()
         raw_conn.close()
+
+
+def save_demo_execution(exec_data: Dict[str, Any], dsn: Optional[str] = None, db_path: Optional[Union[str, Path]] = None) -> None:
+    """Record a Bybit Demo order execution attempt durably."""
+    engine = init_db(db_path=db_path, dsn=dsn)
+    now_iso = datetime.now(timezone.utc).isoformat()
+    with get_db_connection(db_path=db_path, dsn=dsn) as conn:
+        cur = conn.cursor()
+        if engine == "postgres":
+            cur.execute("""
+                INSERT INTO demo_executions (
+                    cycle_id, symbol, direction, order_type, qty, entry_price, sl, tp, rr,
+                    risk_budget_usd, bybit_order_id, order_link_id, status, error_message, created_at
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (order_link_id) DO UPDATE SET
+                    status = excluded.status,
+                    bybit_order_id = excluded.bybit_order_id,
+                    error_message = excluded.error_message
+            """, (
+                exec_data.get("cycle_id"),
+                exec_data.get("symbol"),
+                exec_data.get("direction"),
+                exec_data.get("order_type", "Market"),
+                str(exec_data.get("qty")),
+                exec_data.get("entry_price"),
+                exec_data.get("sl"),
+                exec_data.get("tp"),
+                exec_data.get("rr"),
+                exec_data.get("risk_budget_usd"),
+                exec_data.get("bybit_order_id"),
+                exec_data.get("order_link_id"),
+                exec_data.get("status"),
+                exec_data.get("error_message"),
+                now_iso
+            ))
+        else:
+            cur.execute("""
+                INSERT INTO demo_executions (
+                    cycle_id, symbol, direction, order_type, qty, entry_price, sl, tp, rr,
+                    risk_budget_usd, bybit_order_id, order_link_id, status, error_message, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (order_link_id) DO UPDATE SET
+                    status = excluded.status,
+                    bybit_order_id = excluded.bybit_order_id,
+                    error_message = excluded.error_message
+            """, (
+                exec_data.get("cycle_id"),
+                exec_data.get("symbol"),
+                exec_data.get("direction"),
+                exec_data.get("order_type", "Market"),
+                str(exec_data.get("qty")),
+                exec_data.get("entry_price"),
+                exec_data.get("sl"),
+                exec_data.get("tp"),
+                exec_data.get("rr"),
+                exec_data.get("risk_budget_usd"),
+                exec_data.get("bybit_order_id"),
+                exec_data.get("order_link_id"),
+                exec_data.get("status"),
+                exec_data.get("error_message"),
+                now_iso
+            ))
+        conn.commit()
+
+
+def get_demo_executions(limit: int = 50, dsn: Optional[str] = None, db_path: Optional[Union[str, Path]] = None) -> List[Dict[str, Any]]:
+    """Retrieve historical demo order executions."""
+    engine = get_active_engine(db_path=db_path, dsn=dsn)
+    with get_db_connection(db_path=db_path, dsn=dsn) as conn:
+        cur = conn.cursor()
+        placeholder = "%s" if engine == "postgres" else "?"
+        cur.execute(f"SELECT * FROM demo_executions ORDER BY id DESC LIMIT {placeholder}", (limit,))
+        rows = cur.fetchall()
+        return [dict(r) for r in rows]
+

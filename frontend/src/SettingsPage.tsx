@@ -2,7 +2,7 @@ import { apiUrl } from "./api";
 import { useState, useEffect } from "react";
 import {
   Settings, ShieldCheck, Key, Bell, Database,
-  RefreshCw, Send
+  RefreshCw, Send, Zap
 } from "lucide-react";
 import "./App.css";
 
@@ -15,6 +15,14 @@ type SettingsData = {
     trading_enabled: boolean;
     cloud_uptime: string;
     last_checked: string;
+  };
+  execution?: {
+    demo_execution_enabled: boolean;
+    execution_mode: string;
+    risk_per_trade_pct: number;
+    sl_tp_attached: boolean;
+    max_slots: number;
+    status: string;
   };
   bybit: {
     environment: string;
@@ -133,6 +141,27 @@ export default function SettingsPage() {
     }
   };
 
+  const [togglingExecution, setTogglingExecution] = useState(false);
+  const [toggleResult, setToggleResult] = useState<string | null>(null);
+
+  const handleToggleExecution = async () => {
+    try {
+      setTogglingExecution(true);
+      setToggleResult(null);
+      const res = await fetch(apiUrl("/api/settings/toggle-execution"), { method: "POST" });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.detail || "Toggle failed");
+      setToggleResult(`✓ ${json.message}`);
+      await fetchSettings();
+    } catch (err) {
+      setToggleResult(`✕ ${err instanceof Error ? err.message : "Failed to toggle"}`);
+    } finally {
+      setTogglingExecution(false);
+    }
+  };
+
+  const isExecActive = data?.execution?.demo_execution_enabled ?? true;
+
   return (
     <div style={{ padding: "28px 24px", maxWidth: "1280px", margin: "0 auto" }}>
       {/* Header */}
@@ -144,7 +173,7 @@ export default function SettingsPage() {
           <h1 style={{ fontSize: "28px", fontWeight: 800, color: "#fff", margin: 0, letterSpacing: "-0.5px" }}>
             Settings & Controls
           </h1>
-          <p style={{ color: "#94a3b8", fontSize: "13px", marginTop: "6px", marginBottom: 0 }}>
+          <p style={{ color: "#64748b", fontSize: "13px", marginTop: "6px", marginBottom: 0 }}>
             Manage Bybit Demo API credentials, strict 1% risk guards, automated scanner rules, and Telegram alerts.
           </p>
         </div>
@@ -170,10 +199,10 @@ export default function SettingsPage() {
         </button>
       </div>
 
-      {/* Safety Notice Banner */}
+      {/* Safety Notice & Execution Control Banner */}
       <div style={{
-        background: "rgba(16, 185, 129, 0.08)",
-        border: "1px solid rgba(16, 185, 129, 0.25)",
+        background: isExecActive ? "rgba(16, 185, 129, 0.08)" : "rgba(245, 158, 11, 0.08)",
+        border: `1px solid ${isExecActive ? "rgba(16, 185, 129, 0.3)" : "rgba(245, 158, 11, 0.3)"}`,
         borderRadius: "10px",
         padding: "16px 20px",
         marginBottom: "24px",
@@ -184,28 +213,62 @@ export default function SettingsPage() {
         gap: "14px",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-          <ShieldCheck size={24} style={{ color: "#34d399", flexShrink: 0 }} />
+          <Zap size={24} style={{ color: isExecActive ? "#34d399" : "#fbbf24", flexShrink: 0 }} />
           <div>
             <div style={{ color: "#f8fafc", fontWeight: 700, fontSize: "14px" }}>
-              Trading Mode: Strictly DRY_RUN_ONLY
+              Trading Mode: {isExecActive ? "BYBIT DEMO AUTOMATED EXECUTION (ACTIVE)" : "DRY_RUN_ONLY (READ-ONLY)"}
             </div>
             <div style={{ color: "#94a3b8", fontSize: "12px" }}>
-              Order execution is permanently disabled (<code style={{ color: "#34d399" }}>trading_enabled=False</code>). All setups and sizing are mathematical research simulations.
+              {isExecActive
+                ? "PLAN_READY setups are automatically submitted to Bybit Demo as Market Orders with attached SL/TP (Strict 1% equity risk)."
+                : "Order execution is currently paused. Setups and position sizing are calculated in dry-run simulation."}
             </div>
           </div>
         </div>
-        <div style={{
-          background: "#064e3b",
-          color: "#6ee7b7",
-          padding: "4px 12px",
-          borderRadius: "999px",
-          fontSize: "11px",
-          fontWeight: 700,
-          letterSpacing: "0.5px",
-        }}>
-          ZERO ORDER RISK
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <button
+            onClick={handleToggleExecution}
+            disabled={togglingExecution}
+            style={{
+              background: isExecActive ? "#7f1d1d" : "#065f46",
+              border: `1px solid ${isExecActive ? "#ef4444" : "#10b981"}`,
+              color: "#fff",
+              padding: "7px 16px",
+              borderRadius: "6px",
+              fontSize: "12px",
+              fontWeight: 700,
+              cursor: "pointer",
+            }}
+          >
+            {togglingExecution ? "Updating..." : isExecActive ? "Pause Demo Execution" : "Enable Demo Execution"}
+          </button>
+          <div style={{
+            background: isExecActive ? "#064e3b" : "#451a03",
+            color: isExecActive ? "#6ee7b7" : "#fcd34d",
+            padding: "4px 12px",
+            borderRadius: "999px",
+            fontSize: "11px",
+            fontWeight: 700,
+            letterSpacing: "0.5px",
+          }}>
+            {isExecActive ? "BYBIT DEMO LIVE" : "DRY RUN ONLY"}
+          </div>
         </div>
       </div>
+
+      {toggleResult && (
+        <div style={{
+          background: toggleResult.startsWith("✓") ? "rgba(16, 185, 129, 0.1)" : "rgba(239, 68, 68, 0.1)",
+          border: `1px solid ${toggleResult.startsWith("✓") ? "#10b981" : "#ef4444"}`,
+          color: toggleResult.startsWith("✓") ? "#4ade80" : "#fca5a5",
+          padding: "10px 14px",
+          borderRadius: "8px",
+          marginBottom: "16px",
+          fontSize: "12px"
+        }}>
+          {toggleResult}
+        </div>
+      )}
 
       {error && (
         <div style={{ background: "#450a0a", border: "1px solid #ef4444", color: "#fca5a5", padding: "14px", borderRadius: "8px", marginBottom: "20px", fontSize: "13px" }}>

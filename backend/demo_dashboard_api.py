@@ -115,8 +115,9 @@ def read_demo_account():
         "orders_error": False,
         "orders_first_page_only": False,
         "trading_enabled": False,
+        "demo_execution_enabled": os.getenv("BYBIT_DEMO_EXECUTION_ENABLED", "true").strip().lower() in ("true", "1", "yes", "on"),
         "real_trading_enabled": False,
-        "execution_status": "DISABLED / NO ORDERS",
+        "execution_status": "ACTIVE / BYBIT DEMO (1% RISK)" if os.getenv("BYBIT_DEMO_EXECUTION_ENABLED", "true").strip().lower() in ("true", "1", "yes", "on") else "DISABLED / NO ORDERS",
         "risk_health": "UNAVAILABLE",
         "updated_at": now_iso,
     }
