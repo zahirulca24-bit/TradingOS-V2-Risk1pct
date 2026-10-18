@@ -752,15 +752,15 @@ export default function TradingTerminalPage() {
   return (
     <div className="market-terminal">
       <div className="market-page-title">
-        <div>
-          <div className="market-eyebrow">MARKET WORKSPACE / BYBIT PERPETUAL FUTURES</div>
-          <h1>Trading Terminal</h1>
-          <p>Bybit USDT Perpetual · {timeframe === "60" ? "1-hour candles" : "15-minute candles"}</p>
+        <div className="market-page-title-left">
+          <span className="market-eyebrow-mini">WORKSPACE</span>
+          <h1 className="market-title-text">Trading Terminal</h1>
+          <span className="market-sub-text">Bybit USDT Perpetual · {timeframe === "60" ? "1H" : "15m"} candles</span>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+        <div className="market-page-title-right">
           <div className="live-ticking-badge">
             <span className="live-pulse-dot" />
-            <span>BYBIT LIVE (15s Ticking)</span>
+            <span>BYBIT LIVE (15s)</span>
           </div>
         </div>
       </div>
@@ -920,29 +920,34 @@ export default function TradingTerminalPage() {
             )}
           </div>
 
-          <div style={{
-            margin: "12px 12px 4px",
-            padding: 14,
+          <details className="market-evidence-details" style={{
+            margin: "4px 8px",
+            padding: "6px 12px",
             background: "#0c1013",
             border: "1px solid #272c32",
-            borderRadius: 7,
+            borderRadius: 6,
             color: "#d4d4d8",
-            fontSize: 12,
+            fontSize: 11,
           }}>
-            <div style={{
+            <summary style={{
               display: "flex",
               justifyContent: "space-between",
-              gap: 12,
+              alignItems: "center",
+              cursor: "pointer",
+              gap: 10,
               flexWrap: "wrap",
+              userSelect: "none",
             }}>
-              <strong>PRICE ACTION / AUTO LEVELS</strong>
-              <span style={{ color: "#a1a1aa" }}>
-                Committed cycle {timeText(rankingTime)} · {freshness}
+              <span style={{ fontWeight: 600, color: "#e4e4e7" }}>
+                📋 PRICE ACTION / AUTO LEVELS & EVIDENCE
               </span>
-            </div>
+              <span style={{ color: "#a1a1aa", fontSize: 11 }}>
+                Committed cycle {timeText(rankingTime)} · <span style={{ color: freshness === "FRESH" ? "#10b981" : "#f59e0b" }}>{freshness}</span> (Click to view details ▾)
+              </span>
+            </summary>
 
             {!showEvidence && (
-              <p style={{color:"#fbbf24",marginTop:10}}>
+              <p style={{color:"#fbbf24",marginTop:8,marginBottom:4}}>
                 Overlays hidden: {freshness !== "FRESH" ? "committed cycle is stale or unavailable" : "chart is not aligned to the same committed 15m candle"}.
                 Refresh candles after the next scan. Historical structure markers remain visible.
               </p>
@@ -951,9 +956,9 @@ export default function TradingTerminalPage() {
               <>
                 <div style={{
                   display: "flex",
-                  gap: 22,
+                  gap: 16,
                   flexWrap: "wrap",
-                  marginTop: 12,
+                  marginTop: 8,
                 }}>
                   <span>
                     1H Trend:{" "}
@@ -979,16 +984,16 @@ export default function TradingTerminalPage() {
 
                 <p style={{
                   color: "#a1a1aa",
-                  margin: "10px 0 0",
+                  margin: "8px 0 0",
                 }}>
                   Zone status: {selectedOpportunity.reason}
                 </p>
-                <p style={{color:"#d4d4d8",margin:"10px 0 0"}}>
+                <p style={{color:"#d4d4d8",margin:"6px 0 0"}}>
                   Trade Plan: <strong>{selectedPlan?.status ?? NO_VALUE}</strong>
                   {" · "}Reason: {selectedPlan?.reason?.replaceAll("_"," ") ?? NO_VALUE}
                   {" · "}Pattern: {selectedPlan?.pattern ?? NO_VALUE}
                 </p>
-                <p style={{color:"#a1a1aa",margin:"8px 0 0"}}>
+                <p style={{color:"#a1a1aa",margin:"6px 0 0"}}>
                   Reference Entry: {priceText(selectedPlan?.entry_reference)}
                   {" · "}SL: {priceText(selectedPlan?.sl)}
                   {" · "}TP: {priceText(selectedPlan?.tp)}
@@ -997,7 +1002,7 @@ export default function TradingTerminalPage() {
                 </p>
               </>
             ) : (
-              <p style={{ color: "#a1a1aa", marginBottom: 0 }}>
+              <p style={{ color: "#a1a1aa", margin: "6px 0 0" }}>
                 {rankingError ||
                   "No directional ranking for this symbol. " +
                   "Auto levels are not available."}
@@ -1007,12 +1012,13 @@ export default function TradingTerminalPage() {
             <p style={{
               color: "#fbbf24",
               marginBottom: 0,
-              marginTop: 10,
+              marginTop: 6,
+              fontSize: 10,
             }}>
               Read-only evidence. Entry/SL/TP overlays appear only for same-cycle,
               fresh PLAN_READY research. They are not orders or current executable quotes.
             </p>
-          </div>
+          </details>
 
           <div className="market-footer">
             <span>Last saved candle: {dateText}</span>
