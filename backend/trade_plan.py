@@ -107,7 +107,7 @@ def build_trade_plan(candles_1h, candles_15m):
 
     if direction == "LONG":
         if not lows:
-            return decision("WAIT", "NO_CONFIRMED_SUPPORT")
+            return decision("WAIT", "NO_CONFIRMED_SUPPORT", trend=trend, direction=direction, candle_time=current["time"])
 
         sweep_level = lows[-1]
 
@@ -118,7 +118,7 @@ def build_trade_plan(candles_1h, candles_15m):
 
     else:
         if not highs:
-            return decision("WAIT", "NO_CONFIRMED_RESISTANCE")
+            return decision("WAIT", "NO_CONFIRMED_RESISTANCE", trend=trend, direction=direction, candle_time=current["time"])
 
         sweep_level = highs[-1]
 
@@ -133,6 +133,8 @@ def build_trade_plan(candles_1h, candles_15m):
             "NO_SWEEP_ON_LAST_CLOSED_CANDLE",
             trend=trend,
             direction=direction,
+            candle_time=current["time"],
+            valid_after=current["time"] + CANDLE_SECONDS,
         )
 
     pattern = detect_pattern(previous, current, direction)
