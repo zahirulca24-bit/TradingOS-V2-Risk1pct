@@ -143,19 +143,19 @@ export default function BotManagerPage() {
               <><WifiOff size={13} style={{ color: "#f87171" }} /> BACKEND OFFLINE</>
             )}
           </span>
-          <span className="outline-pill" style={{ borderColor: "#444", color: "#888" }}>
-            <Lock size={13} /> ORDER EXECUTION DISABLED
+          <span className="outline-pill" style={{ borderColor: "#059669", color: "#34d399", background: "rgba(16, 185, 129, 0.1)" }}>
+            <Activity size={13} /> BYBIT DEMO EXECUTION ENABLED
           </span>
         </div>
       </div>
 
       {/* Safety Notice Banner */}
-      <div className="info-note" style={{ marginBottom: "24px", background: "#0c0c0c", borderColor: "#262626" }}>
-        <ShieldCheck size={18} style={{ color: "#4ade80", flexShrink: 0 }} />
+      <div className="info-note" style={{ marginBottom: "24px", background: "rgba(16, 185, 129, 0.08)", borderColor: "rgba(16, 185, 129, 0.3)" }}>
+        <ShieldCheck size={18} style={{ color: "#34d399", flexShrink: 0 }} />
         <div>
-          <strong>Autonomous Order Execution Disabled: </strong>
-          TradingOS V2 runs in strict <strong>DRY RUN / Research mode</strong>.
-          The automated background scheduler detects market structure and calculates 1% risk plans without transmitting orders to Bybit.
+          <strong style={{ color: "#34d399" }}>Autonomous Order Execution Active: </strong>
+          TradingOS V2 automated Bybit Demo execution is active.
+          Qualified <strong>PLAN_READY</strong> signals (RR &ge; 1.5) are automatically executed as Market orders with attached SL/TP within a strict 1% risk budget.
         </div>
       </div>
 
