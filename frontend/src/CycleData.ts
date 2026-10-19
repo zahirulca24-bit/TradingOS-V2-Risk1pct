@@ -122,6 +122,10 @@ export function useCycleFeed() {
       controller = new AbortController();
 
       try {
+        // Trigger background scan on user manual refresh to guarantee fresh commit
+        if (revision > 0) {
+          fetch(`${API_ROOT}/scanner/trigger`, { method: "POST" }).catch(() => {});
+        }
         const response = await fetch(`${API_ROOT}/scanner/cycle`, {
           cache: "no-store",
           signal: controller.signal,

@@ -213,6 +213,35 @@ def trigger_scanner(background_tasks: BackgroundTasks):
     }
 
 
+# Auto-scheduler thread for autonomous 15m closed-candle scan & execution
+def _auto_scheduler_loop():
+    import time
+    from scanner_scheduler import next_scan_time
+    print("[SCHEDULER] Autonomous 15m scanner loop started", flush=True)
+    # Run initial cycle scan on startup after 10s warmup
+    time.sleep(10)
+    _execute_scanner_cycle_background()
+    while True:
+        try:
+            target = next_scan_time()
+            now_t = time.time()
+            wait_sec = target.timestamp() - now_t
+            if wait_sec > 0:
+                time.sleep(min(wait_sec, 60))
+                continue
+            _execute_scanner_cycle_background()
+            time.sleep(5)
+        except Exception as e:
+            print("[SCHEDULER] Loop exception:", e, flush=True)
+            time.sleep(10)
+
+
+@app.on_event("startup")
+def start_autonomous_scheduler():
+    scheduler_thread = threading.Thread(target=_auto_scheduler_loop, daemon=True, name="AutoScannerScheduler")
+    scheduler_thread.start()
+
+
 # TradingOS V2 read-only opportunity ranking
 @app.get("/scanner/opportunities")
 def get_scanner_opportunities():
