@@ -391,14 +391,18 @@ export default function Phase3Dashboard() {
           </div>
           <div className="system-row">
             <span><Bot size={16} /> Order Execution</span>
-            <b>{account?.trading_enabled ? "CHECK BACKEND SETTINGS" : "DISABLED / NO ORDERS"}</b>
+            <b style={{ color: account?.trading_enabled ? "#34d399" : "#fbbf24" }}>
+              {account?.trading_enabled ? "BYBIT DEMO (1% RISK ACTIVE)" : "DISABLED / NO ORDERS"}
+            </b>
           </div>
           <div className="system-row">
             <span><Lock size={16} /> Latest Attempt</span>
             <b>{pipeline?.last_attempt?.status ?? "Unknown"}</b>
           </div>
           <p style={{ padding: "10px 20px", ...detail }}>
-            Signals are research evidence, not orders. Absolutely no live or demo execution is initiated.
+            {account?.trading_enabled
+              ? "Automated Bybit Demo execution active: Qualified PLAN_READY setups execute with 1% risk SL/TP."
+              : "Signals are research evidence. Automated order execution is currently paused."}
           </p>
         </section>
       </div>
