@@ -4,7 +4,7 @@ from universe_candles import fetch_closed_candles
 from market_structure import detect_trend
 from liquidity_sweep import find_confirmed_levels
 
-MIN_RR = 2.0
+MIN_RR = 1.5
 SL_BUFFER_PERCENT = 0.001
 CANDLE_SECONDS = 15 * 60
 

@@ -55,7 +55,7 @@ def execute_demo_plans(reports: Dict[str, Any]) -> List[Dict[str, Any]]:
     plans_report = reports.get("trade_plans", {})
     ready_plans = [
         p for p in plans_report.get("results", [])
-        if p.get("status") == "PLAN_READY" and p.get("rr", 0) >= 2.0
+        if p.get("status") == "PLAN_READY" and p.get("rr", 0) >= 1.5
     ]
 
     if not ready_plans:
