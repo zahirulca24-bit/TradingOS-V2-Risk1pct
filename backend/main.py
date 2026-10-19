@@ -207,10 +207,10 @@ def trigger_scanner(background_tasks: BackgroundTasks):
     global _scan_is_running
     if _scan_is_running:
         return JSONResponse(
-            status_code=409,
+            status_code=200,
             content={
                 "status": "busy",
-                "message": "Scanner cycle is already running in background."
+                "message": "Scanner cycle is already currently running in background."
             }
         )
     background_tasks.add_task(_execute_scanner_cycle_background)
