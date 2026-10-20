@@ -148,19 +148,18 @@ export default function DemoTradingPage() {
               <><WifiOff size={13} style={{ color: "#f87171" }} /> DEMO DISCONNECTED</>
             )}
           </span>
-          <span className="outline-pill" style={{ borderColor: "#444", color: "#888" }}>
-            <Lock size={13} /> ORDER EXECUTION DISABLED
+          <span className="outline-pill" style={{ borderColor: "#22c55e44", color: "#4ade80" }}>
+            <Activity size={13} /> BYBIT DEMO EXECUTION ENABLED
           </span>
         </div>
       </div>
 
       {/* Execution Safety Banner */}
-      <div className="info-note" style={{ marginBottom: "24px", background: "#0c0c0c", borderColor: "#262626" }}>
+      <div className="info-note" style={{ marginBottom: "24px", background: "#0c1510", borderColor: "#22c55e33" }}>
         <ShieldCheck size={18} style={{ color: "#4ade80", flexShrink: 0 }} />
         <div>
-          <strong>Strict Read-Only Verification: </strong>
-          No live or demo orders can be placed, amended, or cancelled from this interface.
-          Order submission endpoints and execution buttons are omitted.
+          <strong>Autonomous 1% Risk Execution: </strong>
+          Automatic Bybit Demo execution is active with strict 1% equity guardrail per trade and max 3 exposure slots.
         </div>
       </div>
 
@@ -336,8 +335,8 @@ export default function DemoTradingPage() {
             </div>
 
             <div className="system-row">
-              <span><Lock size={15} /> Execution Status</span>
-              <b style={{ color: "#fbbf24" }}>DISABLED / NO ORDERS</b>
+              <span><Activity size={15} /> Execution Status</span>
+              <b style={{ color: "#4ade80" }}>ACTIVE / BYBIT DEMO (1% RISK)</b>
             </div>
 
             <div className="system-row">
