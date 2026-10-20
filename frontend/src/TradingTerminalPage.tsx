@@ -200,6 +200,25 @@ export default function TradingTerminalPage() {
   const [orderDirection, setOrderDirection] = useState<"LONG" | "SHORT">("LONG");
   const [previewData, setPreviewData] = useState<any>(null);
   const [loadingPreview, setLoadingPreview] = useState(false);
+  const [customSl, setCustomSl] = useState<string>('');
+  const [customTp, setCustomTp] = useState<string>('');
+
+  const recalculateOrderPreview = async (newDir: "LONG" | "SHORT", overrideSl?: number, overrideTp?: number) => {
+    setLoadingPreview(true);
+    const entry = previewData?.entry_reference || selectedPlan?.entry_reference || (candles.length ? candles[candles.length - 1].close : 0);
+    const finalSl = overrideSl !== undefined ? overrideSl : (newDir === "LONG" ? entry * 0.988 : entry * 1.012);
+    const finalTp = overrideTp !== undefined ? overrideTp : (newDir === "LONG" ? entry * 1.036 : entry * 0.964);
+
+    try {
+      const res = await fetch(`${API}/api/execution/preview?symbol=${symbol}&direction=${newDir}&entry=${entry}&sl=${finalSl}&tp=${finalTp}`);
+      if (res.ok) {
+        const json = await res.json();
+        setPreviewData(json);
+      }
+    } catch { /* ignore */ } finally {
+      setLoadingPreview(false);
+    }
+  };
 
   const handleOpenOrderModal = async () => {
     const dir = selectedOpportunity?.direction === "SHORT" ? "SHORT" : "LONG";
@@ -209,11 +228,14 @@ export default function TradingTerminalPage() {
     setLoadingPreview(true);
 
     const entry = selectedPlan?.entry_reference || (candles.length ? candles[candles.length - 1].close : 0);
-    const sl = selectedPlan?.sl || (dir === "LONG" ? entry * 0.988 : entry * 1.012);
-    const tp = selectedPlan?.tp || (dir === "LONG" ? entry * 1.036 : entry * 0.964);
+    const slVal = selectedPlan?.sl ? selectedPlan.sl : (dir === "LONG" ? entry * 0.988 : entry * 1.012);
+    const tpVal = selectedPlan?.tp ? selectedPlan.tp : (dir === "LONG" ? entry * 1.036 : entry * 0.964);
+
+    setCustomSl(slVal ? String(Number(slVal.toFixed(4))) : '');
+    setCustomTp(tpVal ? String(Number(tpVal.toFixed(4))) : '');
 
     try {
-      const res = await fetch(`${API}/api/execution/preview?symbol=${symbol}&direction=${dir}&entry=${entry}&sl=${sl}&tp=${tp}`);
+      const res = await fetch(`${API}/api/execution/preview?symbol=${symbol}&direction=${dir}&entry=${entry}&sl=${slVal}&tp=${tpVal}`);
       if (res.ok) {
         const json = await res.json();
         setPreviewData(json);
@@ -225,21 +247,30 @@ export default function TradingTerminalPage() {
 
   const handleToggleOrderDirection = async (newDir: "LONG" | "SHORT") => {
     setOrderDirection(newDir);
-    setLoadingPreview(true);
     setOrderResult(null);
-
     const entry = previewData?.entry_reference || (candles.length ? candles[candles.length - 1].close : 0);
-    const sl = newDir === "LONG" ? entry * 0.988 : entry * 1.012;
-    const tp = newDir === "LONG" ? entry * 1.036 : entry * 0.964;
+    const slVal = newDir === "LONG" ? entry * 0.988 : entry * 1.012;
+    const tpVal = newDir === "LONG" ? entry * 1.036 : entry * 0.964;
+    setCustomSl(String(Number(slVal.toFixed(4))));
+    setCustomTp(String(Number(tpVal.toFixed(4))));
+    await recalculateOrderPreview(newDir, slVal, tpVal);
+  };
 
-    try {
-      const res = await fetch(`${API}/api/execution/preview?symbol=${symbol}&direction=${newDir}&entry=${entry}&sl=${sl}&tp=${tp}`);
-      if (res.ok) {
-        const json = await res.json();
-        setPreviewData(json);
-      }
-    } catch { /* ignore */ } finally {
-      setLoadingPreview(false);
+  const handleCustomSlChange = (val: string) => {
+    setCustomSl(val);
+    const num = parseFloat(val);
+    if (!isNaN(num) && num > 0) {
+      const tpNum = parseFloat(customTp);
+      void recalculateOrderPreview(orderDirection, num, !isNaN(tpNum) && tpNum > 0 ? tpNum : undefined);
+    }
+  };
+
+  const handleCustomTpChange = (val: string) => {
+    setCustomTp(val);
+    const num = parseFloat(val);
+    if (!isNaN(num) && num > 0) {
+      const slNum = parseFloat(customSl);
+      void recalculateOrderPreview(orderDirection, !isNaN(slNum) && slNum > 0 ? slNum : undefined, num);
     }
   };
 
@@ -248,9 +279,9 @@ export default function TradingTerminalPage() {
     setOrderResult(null);
 
     const entry = previewData?.entry_reference || (candles.length ? candles[candles.length - 1].close : 0);
-    const sl = previewData?.sl || 0;
-    const tp = previewData?.tp || 0;
-    const rr = previewData?.rr || 2.0;
+    const sl = parseFloat(customSl) || previewData?.sl || 0;
+    const tp = parseFloat(customTp) || previewData?.tp || 0;
+    const rr = previewData?.rr || 1.5;
 
     try {
       const res = await fetch(`${API}/api/execution/place-order`, {
@@ -1168,17 +1199,57 @@ export default function TradingTerminalPage() {
                   </div>
                 </div>
 
-                <div className="modal-stat-card">
-                  <div className="modal-stat-label">Stop Loss (SL)</div>
-                  <div className="modal-stat-value" style={{ color: "#ef4444" }}>
-                    ${previewData?.sl ? previewData.sl.toLocaleString() : "—"}
+                <div className="modal-stat-card" style={{ border: "1px solid rgba(239, 68, 68, 0.4)" }}>
+                  <div className="modal-stat-label" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span>Stop Loss (SL)</span>
+                    <span style={{ fontSize: "0.68rem", color: "#94a3b8" }}>Editable</span>
+                  </div>
+                  <div style={{ marginTop: "4px" }}>
+                    <input
+                      type="number"
+                      step="any"
+                      placeholder="SL Price"
+                      value={customSl}
+                      onChange={(e) => handleCustomSlChange(e.target.value)}
+                      style={{
+                        width: "100%",
+                        background: "rgba(15, 23, 42, 0.8)",
+                        border: "1px solid #ef4444",
+                        borderRadius: "4px",
+                        color: "#ef4444",
+                        fontWeight: 700,
+                        fontSize: "0.95rem",
+                        padding: "4px 8px",
+                        outline: "none"
+                      }}
+                    />
                   </div>
                 </div>
 
-                <div className="modal-stat-card">
-                  <div className="modal-stat-label">Take Profit (TP)</div>
-                  <div className="modal-stat-value" style={{ color: "#22c55e" }}>
-                    ${previewData?.tp ? previewData.tp.toLocaleString() : "—"}
+                <div className="modal-stat-card" style={{ border: "1px solid rgba(34, 197, 94, 0.4)" }}>
+                  <div className="modal-stat-label" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span>Take Profit (TP)</span>
+                    <span style={{ fontSize: "0.68rem", color: "#94a3b8" }}>Editable</span>
+                  </div>
+                  <div style={{ marginTop: "4px" }}>
+                    <input
+                      type="number"
+                      step="any"
+                      placeholder="TP Price"
+                      value={customTp}
+                      onChange={(e) => handleCustomTpChange(e.target.value)}
+                      style={{
+                        width: "100%",
+                        background: "rgba(15, 23, 42, 0.8)",
+                        border: "1px solid #22c55e",
+                        borderRadius: "4px",
+                        color: "#22c55e",
+                        fontWeight: 700,
+                        fontSize: "0.95rem",
+                        padding: "4px 8px",
+                        outline: "none"
+                      }}
+                    />
                   </div>
                 </div>
 
