@@ -421,3 +421,106 @@ def export_dry_runs_csv(
     response = Response(content=output.getvalue(), media_type="text/csv")
     response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
     return response
+
+
+@router.get("/executed-trades")
+def get_executed_trades():
+    """Returns durable Bybit Demo executed orders combined with real-time closed PnL."""
+    from db_adapter import get_demo_executions
+    from closed_pnl_tracker import fetch_bybit_closed_pnl
+
+    executions = get_demo_executions(limit=50)
+    closed_pnl_list = fetch_bybit_closed_pnl(limit=50)
+
+    pnl_by_order = {item.get("order_id"): item for item in closed_pnl_list if item.get("order_id")}
+    pnl_by_symbol = {}
+    for item in closed_pnl_list:
+        sym = item.get("symbol")
+        if sym and sym not in pnl_by_symbol:
+            pnl_by_symbol[sym] = item
+
+    merged = []
+    total_realized_pnl = 0.0
+    wins = 0
+    losses = 0
+
+    for ex in executions:
+        oid = ex.get("bybit_order_id")
+        sym = ex.get("symbol")
+        matched = pnl_by_order.get(oid) or pnl_by_symbol.get(sym)
+
+        pnl_val = matched.get("closed_pnl") if matched else None
+        exit_p = matched.get("exit_price") if matched else None
+        status = ex.get("status")
+
+        if pnl_val is not None:
+            total_realized_pnl += float(pnl_val)
+            if float(pnl_val) >= 0:
+                wins += 1
+                status = "CLOSED_WON"
+            else:
+                losses += 1
+                status = "CLOSED_LOST"
+        else:
+            status = "OPEN" if ex.get("status") == "FILLED" else ex.get("status")
+
+        merged.append({
+            "id": ex.get("id"),
+            "cycle_id": ex.get("cycle_id"),
+            "symbol": sym,
+            "direction": ex.get("direction"),
+            "qty": ex.get("qty"),
+            "entry_price": ex.get("entry_price"),
+            "exit_price": exit_p,
+            "sl": ex.get("sl"),
+            "tp": ex.get("tp"),
+            "rr": ex.get("rr"),
+            "risk_budget_usd": ex.get("risk_budget_usd"),
+            "bybit_order_id": oid,
+            "status": status,
+            "closed_pnl": pnl_val,
+            "created_at": ex.get("created_at"),
+        })
+
+    tracked_oids = {ex.get("bybit_order_id") for ex in executions if ex.get("bybit_order_id")}
+    for cpnl in closed_pnl_list:
+        c_oid = cpnl.get("order_id")
+        if c_oid and c_oid not in tracked_oids:
+            pnl_val = float(cpnl.get("closed_pnl") or 0.0)
+            total_realized_pnl += pnl_val
+            if pnl_val >= 0:
+                wins += 1
+            else:
+                losses += 1
+            merged.append({
+                "id": c_oid,
+                "cycle_id": "BYBIT_SYNC",
+                "symbol": cpnl.get("symbol"),
+                "direction": "LONG" if cpnl.get("side") == "Buy" else "SHORT",
+                "qty": cpnl.get("qty"),
+                "entry_price": cpnl.get("entry_price"),
+                "exit_price": cpnl.get("exit_price"),
+                "sl": None,
+                "tp": None,
+                "rr": None,
+                "risk_budget_usd": None,
+                "bybit_order_id": c_oid,
+                "status": "CLOSED_WON" if pnl_val >= 0 else "CLOSED_LOST",
+                "closed_pnl": pnl_val,
+                "created_at": cpnl.get("created_at"),
+            })
+
+    total_closed = wins + losses
+    win_rate = round((wins / total_closed) * 100, 1) if total_closed > 0 else 0.0
+
+    return {
+        "status": "success",
+        "total_executions": len(merged),
+        "total_closed": total_closed,
+        "wins": wins,
+        "losses": losses,
+        "win_rate": win_rate,
+        "total_realized_pnl": round(total_realized_pnl, 2),
+        "executions": merged,
+    }
+

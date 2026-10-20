@@ -2,7 +2,7 @@ import { API_ROOT } from "./api";
 import React, { useState, useEffect } from "react";
 import {
   BookOpen, ShieldCheck, FileBarChart, Download,
-  Filter, ChevronLeft, ChevronRight, Calendar, Info
+  Filter, ChevronLeft, ChevronRight, Calendar, Info, Zap, TrendingUp, CheckCircle2, XCircle, Clock
 } from "lucide-react";
 
 import "./TradeJournalPage.css";
@@ -61,6 +61,24 @@ interface DryRunItem {
   evaluated_at: string;
 }
 
+interface ExecutedTradeItem {
+  id: string | number;
+  cycle_id: string;
+  symbol: string;
+  direction: string;
+  qty: string;
+  entry_price: number | null;
+  exit_price: number | null;
+  sl: number | null;
+  tp: number | null;
+  rr: number | null;
+  risk_budget_usd: number | null;
+  bybit_order_id: string | null;
+  status: string;
+  closed_pnl: number | null;
+  created_at: string;
+}
+
 interface DailyReportItem {
   utc_date: string;
   cycles_committed: number;
@@ -91,9 +109,9 @@ const API_BASE = API_ROOT;
 export default function TradeJournalPage({
   initialTab = "signals"
 }: {
-  initialTab?: "signals" | "dry-runs" | "reports";
+  initialTab?: "signals" | "dry-runs" | "reports" | "executions";
 }) {
-  const [activeTab, setActiveTab] = useState<"signals" | "dry-runs" | "reports">(initialTab);
+  const [activeTab, setActiveTab] = useState<"signals" | "dry-runs" | "reports" | "executions">(initialTab);
 
   useEffect(() => {
     setActiveTab(initialTab);
@@ -120,6 +138,34 @@ export default function TradeJournalPage({
 
   // Daily Reports State
   const [dailyReports, setDailyReports] = useState<DailyReportItem[]>([]);
+  // Executed Trades State
+  const [executedTrades, setExecutedTrades] = useState<ExecutedTradeItem[]>([]);
+  const [execStats, setExecStats] = useState<{ total_closed: number; wins: number; losses: number; win_rate: number; total_realized_pnl: number }>({
+    total_closed: 0, wins: 0, losses: 0, win_rate: 0, total_realized_pnl: 0
+  });
+
+  async function fetchExecutedTrades() {
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/journal/executed-trades`, { cache: "no-store" });
+      if (res.ok) {
+        const data = await res.json();
+        setExecutedTrades(data.executions || []);
+        setExecStats({
+          total_closed: data.total_closed || 0,
+          wins: data.wins || 0,
+          losses: data.losses || 0,
+          win_rate: data.win_rate || 0,
+          total_realized_pnl: data.total_realized_pnl || 0
+        });
+      }
+    } catch {
+      setExecutedTrades([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
 
   // Refresh Journal Health
   async function fetchHealth() {
@@ -215,6 +261,8 @@ export default function TradeJournalPage({
       void fetchDryRuns();
     } else if (activeTab === "reports") {
       void fetchDailyReports();
+    } else if (activeTab === "executions") {
+      void fetchExecutedTrades();
     }
   }, [activeTab, signalsOffset, dryRunsOffset, statusFilter, directionFilter, dateFilter]);
 
@@ -294,6 +342,15 @@ export default function TradeJournalPage({
             <FileBarChart size={16} />
             <span>Daily Reports</span>
           </button>
+          <button
+            className={`journal-tab-btn ${activeTab === "executions" ? "active" : ""}`}
+            onClick={() => setActiveTab("executions")}
+            style={{ color: activeTab === "executions" ? "#22c55e" : undefined }}
+          >
+            <Zap size={16} />
+            <span>Executed Trades & PnL</span>
+          </button>
+
         </div>
 
         <div className="journal-export-group">
@@ -876,6 +933,112 @@ export default function TradeJournalPage({
           </div>
         </section>
       )}
+    </div>
+      {/* Tab Content: Executed Trades & PnL */}
+      {activeTab === "executions" && (
+        <section className="journal-content-panel">
+          {/* Summary KPIs */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "16px", marginBottom: "24px" }}>
+            <div style={{ background: "#111", border: "1px solid #262626", borderRadius: "8px", padding: "16px" }}>
+              <div style={{ fontSize: "11px", color: "#888", textTransform: "uppercase", letterSpacing: "0.5px" }}>Total Realized P&L</div>
+              <div style={{ fontSize: "22px", fontWeight: 700, marginTop: "6px", color: execStats.total_realized_pnl >= 0 ? "#4ade80" : "#ef4444" }}>
+                {execStats.total_realized_pnl >= 0 ? `+$${execStats.total_realized_pnl.toFixed(2)}` : `-$${Math.abs(execStats.total_realized_pnl).toFixed(2)}`} USD
+              </div>
+            </div>
+            <div style={{ background: "#111", border: "1px solid #262626", borderRadius: "8px", padding: "16px" }}>
+              <div style={{ fontSize: "11px", color: "#888", textTransform: "uppercase", letterSpacing: "0.5px" }}>Win Rate</div>
+              <div style={{ fontSize: "22px", fontWeight: 700, marginTop: "6px", color: "#38bdf8" }}>
+                {execStats.win_rate}% <span style={{ fontSize: "12px", color: "#888", fontWeight: 400 }}>({execStats.wins}W / {execStats.losses}L)</span>
+              </div>
+            </div>
+            <div style={{ background: "#111", border: "1px solid #262626", borderRadius: "8px", padding: "16px" }}>
+              <div style={{ fontSize: "11px", color: "#888", textTransform: "uppercase", letterSpacing: "0.5px" }}>Closed Trades</div>
+              <div style={{ fontSize: "22px", fontWeight: 700, marginTop: "6px", color: "#fff" }}>
+                {execStats.total_closed} <span style={{ fontSize: "12px", color: "#888", fontWeight: 400 }}>Positions</span>
+              </div>
+            </div>
+            <div style={{ background: "#111", border: "1px solid #262626", borderRadius: "8px", padding: "16px" }}>
+              <div style={{ fontSize: "11px", color: "#888", textTransform: "uppercase", letterSpacing: "0.5px" }}>Risk Guardrail</div>
+              <div style={{ fontSize: "22px", fontWeight: 700, marginTop: "6px", color: "#22c55e" }}>
+                1.0% <span style={{ fontSize: "12px", color: "#888", fontWeight: 400 }}>Strict per trade</span>
+              </div>
+            </div>
+          </div>
+
+          {loading ? (
+            <div style={{ padding: "40px", textAlign: "center", color: "#888" }}>Loading Executed Trades...</div>
+          ) : executedTrades.length === 0 ? (
+            <div style={{ padding: "40px", textAlign: "center", color: "#888" }}>No executed trades recorded yet.</div>
+          ) : (
+            <div className="journal-table-wrap">
+              <table className="journal-table">
+                <thead>
+                  <tr>
+                    <th>TIME (UTC)</th>
+                    <th>SYMBOL</th>
+                    <th>SIDE</th>
+                    <th>STATUS</th>
+                    <th>QTY</th>
+                    <th>ENTRY</th>
+                    <th>EXIT / TP</th>
+                    <th>STOP LOSS</th>
+                    <th>REALIZED PNL</th>
+                    <th>BYBIT ORDER ID</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {executedTrades.map((t, idx) => (
+                    <tr key={`${t.id}-${idx}`}>
+                      <td style={{ fontSize: "12px", color: "#888" }}>{t.created_at ? t.created_at.slice(0, 19).replace("T", " ") : "—"}</td>
+                      <td><strong>{t.symbol}</strong></td>
+                      <td>
+                        <span style={{ color: t.direction?.toUpperCase() === "LONG" ? "#4ade80" : "#f87171", fontWeight: 600 }}>
+                          {t.direction}
+                        </span>
+                      </td>
+                      <td>
+                        <span style={{
+                          padding: "2px 8px",
+                          borderRadius: "4px",
+                          fontSize: "11px",
+                          fontWeight: 700,
+                          background: t.status === "CLOSED_WON" ? "rgba(34, 197, 94, 0.15)" : t.status === "CLOSED_LOST" ? "rgba(239, 68, 68, 0.15)" : "rgba(56, 189, 248, 0.15)",
+                          color: t.status === "CLOSED_WON" ? "#22c55e" : t.status === "CLOSED_LOST" ? "#ef4444" : "#38bdf8"
+                        }}>
+                          {t.status === "CLOSED_WON" ? "WON 🟢" : t.status === "CLOSED_LOST" ? "LOST 🔴" : "OPEN ⏳"}
+                        </span>
+                      </td>
+                      <td>{t.qty}</td>
+                      <td>${t.entry_price ? t.entry_price.toLocaleString() : "—"}</td>
+                      <td>
+                        {t.exit_price ? (
+                          <span style={{ color: "#38bdf8" }}>${t.exit_price.toLocaleString()}</span>
+                        ) : t.tp ? (
+                          <span style={{ color: "#22c55e" }}>${t.tp.toLocaleString()}</span>
+                        ) : "—"}
+                      </td>
+                      <td>${t.sl ? t.sl.toLocaleString() : "—"}</td>
+                      <td>
+                        {t.closed_pnl !== null && t.closed_pnl !== undefined ? (
+                          <strong style={{ color: t.closed_pnl >= 0 ? "#22c55e" : "#ef4444" }}>
+                            {t.closed_pnl >= 0 ? `+$${t.closed_pnl.toFixed(2)}` : `-$${Math.abs(t.closed_pnl).toFixed(2)}`}
+                          </strong>
+                        ) : (
+                          <span style={{ color: "#888" }}>Running...</span>
+                        )}
+                      </td>
+                      <td style={{ fontSize: "11px", color: "#666", fontFamily: "monospace" }}>
+                        {t.bybit_order_id ? `${String(t.bybit_order_id).slice(0, 8)}...` : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
+
     </div>
   );
 }

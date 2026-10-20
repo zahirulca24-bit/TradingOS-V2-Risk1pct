@@ -36,7 +36,7 @@ async def prevent_anonymous_cloud_data_access(request: Request, call_next):
     on_render = os.environ.get("RENDER", "").lower() in ("true", "1")
     if on_render and request.method != "OPTIONS":
         public_paths = {"/", "/health", "/health/operational", "/scanner/trigger"}
-        public_prefixes = ("/market/", "/auth/", "/scanner/", "/api/execution/")
+        public_prefixes = ("/market/", "/auth/", "/scanner/", "/api/execution/", "/journal/", "/api/journal/")
         path = request.url.path
         if path not in public_paths and not any(path.startswith(p) for p in public_prefixes):
             configured_token = os.environ.get("TRADINGOS_AUTH_TOKEN")
@@ -178,6 +178,13 @@ def _execute_scanner_cycle_background():
                 pass
             atomic_json(STATE_DIR / "last_attempt.json", attempt)
             print("BACKGROUND SCAN COMPLETED:", status, flush=True)
+
+            # Auto-check closed PnL on Bybit and dispatch exit outcome notifications
+            try:
+                from closed_pnl_tracker import check_and_notify_closed_trades
+                check_and_notify_closed_trades()
+            except Exception as _pnl_err:
+                print(f"[PNL_TRACKER] Check failed: {_pnl_err}", flush=True)
     except Exception as exc:
         print("BACKGROUND SCAN FAILED:", exc, flush=True)
         try:
