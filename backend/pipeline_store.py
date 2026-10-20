@@ -53,7 +53,7 @@ def validate_reports(reports):
         raise ValueError("Top 10 exceeded")
     if any(row["trend"] not in ("BULLISH", "BEARISH") for row in scanner["results"]):
         raise ValueError("Neutral symbol in active scanner")
-    if any(row["status"] == "PLAN_READY" and row.get("rr", 0) < 2 for row in plans["results"]):
+    if any(row["status"] == "PLAN_READY" and row.get("rr", 0) < 1.5 for row in plans["results"]):
         raise ValueError("Unqualified ready plan")
     if any(row.get("trading_enabled") for row in reports.values()):
         raise ValueError("Trading must be disabled")
