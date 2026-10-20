@@ -94,6 +94,10 @@ export default function TradeJournalPage({
   initialTab?: "signals" | "dry-runs" | "reports";
 }) {
   const [activeTab, setActiveTab] = useState<"signals" | "dry-runs" | "reports">(initialTab);
+
+  useEffect(() => {
+    setActiveTab(initialTab);
+  }, [initialTab]);
   const [health, setHealth] = useState<JournalHealth | null>(null);
   const [loading, setLoading] = useState(false);
 
