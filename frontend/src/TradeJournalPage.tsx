@@ -2,7 +2,7 @@ import { API_ROOT } from "./api";
 import React, { useState, useEffect } from "react";
 import {
   BookOpen, ShieldCheck, FileBarChart, Download,
-  Filter, ChevronLeft, ChevronRight, Calendar, Info, Zap, TrendingUp, CheckCircle2, XCircle, Clock
+  Filter, ChevronLeft, ChevronRight, Calendar, Info, Zap
 } from "lucide-react";
 
 import "./TradeJournalPage.css";
@@ -933,7 +933,7 @@ export default function TradeJournalPage({
           </div>
         </section>
       )}
-    </div>
+
       {/* Tab Content: Executed Trades & PnL */}
       {activeTab === "executions" && (
         <section className="journal-content-panel">

@@ -29,7 +29,6 @@ const navigation = [
   { path: "/bots", name: "Bot Manager", icon: Bot },
   { path: "/demo", name: "Demo Trading", icon: Wallet },
   { path: "/journal", name: "Trade Journal", icon: BookOpen },
-  { path: "/reports", name: "Daily Reports", icon: FileBarChart },
   { path: "/replay", name: "Replay Lab", icon: Play },
   { path: "/settings", name: "Settings", icon: Settings },
 ];

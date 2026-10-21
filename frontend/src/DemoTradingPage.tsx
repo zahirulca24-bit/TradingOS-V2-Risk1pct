@@ -2,7 +2,7 @@ import { apiUrl, API_ROOT } from "./api";
 import { useState, useEffect } from "react";
 import {
   Wallet, ShieldCheck, Activity, WifiOff,
-  CheckCircle2, AlertCircle, Lock, Layers, RefreshCw
+  CheckCircle2, AlertCircle, Layers, RefreshCw
 } from "lucide-react";
 import "./App.css";
 
