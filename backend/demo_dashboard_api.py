@@ -151,12 +151,23 @@ def read_demo_account():
                 pos_idx = str(p.get("positionIdx", "0")).strip()
                 if sym:
                     key = (sym, pos_idx)
+                    created_ms = int(p.get("createdTime") or p.get("updatedTime") or 0)
+                    created_iso = (
+                        datetime.fromtimestamp(created_ms / 1000, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+                        if created_ms > 0
+                        else None
+                    )
                     dedup_positions[key] = {
                         "symbol": sym,
                         "position_idx": pos_idx,
                         "size": size_val,
                         "side": p.get("side"),
                         "entry_price": number_or_none(p.get("avgPrice")),
+                        "mark_price": number_or_none(p.get("markPrice")),
+                        "unrealised_pnl": number_or_none(p.get("unrealisedPnl")),
+                        "sl": number_or_none(p.get("stopLoss")),
+                        "tp": number_or_none(p.get("takeProfit")),
+                        "created_at": created_iso,
                     }
         active_positions_list = list(dedup_positions.values())
         result["open_positions"] = len(active_positions_list)

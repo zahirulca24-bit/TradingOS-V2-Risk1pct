@@ -12,6 +12,11 @@ type OpenPositionItem = {
   size: number;
   side: string;
   entry_price: number | null;
+  mark_price?: number | null;
+  unrealised_pnl?: number | null;
+  sl?: number | null;
+  tp?: number | null;
+  created_at?: string | null;
 };
 
 type DemoAccountResponse = {
@@ -254,33 +259,66 @@ export default function DemoTradingPage() {
               <table className="market-table">
                 <thead>
                   <tr>
+                    <th>OPEN TIME</th>
                     <th>SYMBOL</th>
                     <th>SIDE</th>
                     <th>SIZE</th>
-                    <th>AVG ENTRY PRICE</th>
-                    <th>POSITION IDX</th>
+                    <th>ENTRY</th>
+                    <th>MARK PRICE</th>
+                    <th>STOP LOSS (SL)</th>
+                    <th>TAKE PROFIT (TP)</th>
+                    <th>UNREALISED P&L</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {positions.map((pos, idx) => (
-                    <tr key={`${pos.symbol}-${pos.position_idx}-${idx}`}>
-                      <td className="symbol-cell">
-                        <span className="symbol-dot" />
-                        <strong>{pos.symbol}</strong>
-                      </td>
-                      <td>
-                        <span style={{
-                          color: pos.side?.toUpperCase() === "BUY" ? "#4ade80" : "#f87171",
-                          fontWeight: 600
-                        }}>
-                          {pos.side?.toUpperCase() === "BUY" ? "LONG" : pos.side?.toUpperCase() === "SELL" ? "SHORT" : pos.side}
-                        </span>
-                      </td>
-                      <td>{pos.size}</td>
-                      <td>{pos.entry_price ? `$${pos.entry_price.toLocaleString()}` : "—"}</td>
-                      <td style={{ color: "#888" }}>{pos.position_idx}</td>
-                    </tr>
-                  ))}
+                  {positions.map((pos, idx) => {
+                    const pnl = pos.unrealised_pnl;
+                    const isWin = pnl !== null && pnl !== undefined && pnl >= 0;
+                    return (
+                      <tr key={`${pos.symbol}-${pos.position_idx}-${idx}`}>
+                        <td style={{ fontSize: "11px", color: "#888", whiteSpace: "nowrap" }}>
+                          {pos.created_at || "—"}
+                        </td>
+                        <td className="symbol-cell">
+                          <span className="symbol-dot" />
+                          <strong>{pos.symbol}</strong>
+                        </td>
+                        <td>
+                          <span style={{
+                            color: pos.side?.toUpperCase() === "BUY" ? "#4ade80" : "#f87171",
+                            fontWeight: 600
+                          }}>
+                            {pos.side?.toUpperCase() === "BUY" ? "LONG 🟢" : pos.side?.toUpperCase() === "SELL" ? "SHORT 🔴" : pos.side}
+                          </span>
+                        </td>
+                        <td>{pos.size}</td>
+                        <td>{pos.entry_price ? `$${pos.entry_price.toLocaleString()}` : "—"}</td>
+                        <td>{pos.mark_price ? `$${pos.mark_price.toLocaleString()}` : "—"}</td>
+                        <td style={{ color: "#ef4444", fontWeight: 500 }}>
+                          {pos.sl ? `$${pos.sl.toLocaleString()}` : "—"}
+                        </td>
+                        <td style={{ color: "#22c55e", fontWeight: 500 }}>
+                          {pos.tp ? `$${pos.tp.toLocaleString()}` : "—"}
+                        </td>
+                        <td>
+                          {pnl !== null && pnl !== undefined ? (
+                            <span style={{
+                              fontWeight: 700,
+                              color: isWin ? "#22c55e" : "#ef4444",
+                              background: isWin ? "rgba(34, 197, 94, 0.12)" : "rgba(239, 68, 68, 0.12)",
+                              padding: "3px 8px",
+                              borderRadius: "4px",
+                              display: "inline-block"
+                            }}>
+                              {isWin ? `+$${pnl.toFixed(2)}` : `-$${Math.abs(pnl).toFixed(2)}`} USD
+                            </span>
+                          ) : (
+                            <span style={{ color: "#888" }}>—</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
