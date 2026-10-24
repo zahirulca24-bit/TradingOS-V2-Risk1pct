@@ -2,6 +2,13 @@
 
 import time
 from datetime import datetime, timezone
+from pathlib import Path
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).resolve().parent / ".env")
+except ImportError:
+    pass
 
 from pipeline_contract import last_closed_boundary
 from pipeline_lock import exclusive_pipeline_lock, PipelineLockContentionError

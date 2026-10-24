@@ -32,11 +32,12 @@ class DirectApiEndpointAuditTests(unittest.TestCase):
         self.assertIn("candidates", data)
 
     def test_account_endpoint(self):
+        from demo_risk_engine import is_demo_execution_enabled
         data = get_demo_account()
         self.assertEqual(data["environment"], "BYBIT_DEMO")
         self.assertIn(data["execution_status"], ["DISABLED / NO ORDERS", "ACTIVE / BYBIT DEMO (1% RISK)"])
         self.assertEqual(data["max_open_and_pending"], 3)
-        self.assertFalse(data["trading_enabled"])
+        self.assertEqual(data["trading_enabled"], is_demo_execution_enabled())
 
 if __name__ == "__main__":
     unittest.main()
