@@ -126,11 +126,12 @@ def operational_health():
         except (OSError, json.JSONDecodeError):
             pass
     # Dynamically reflect autonomous scheduler thread state and active cycle
+    scheduler_enabled = os.environ.get("TRADINGOS_DISABLE_INNER_SCHEDULER", "").lower() not in ("1", "true", "yes")
     return build_health_report(
         backend_status="ONLINE",
         frontend_status="ONLINE",
-        scheduler_running=True,
-        scheduler_logical_count=1,
+        scheduler_running=scheduler_enabled,
+        scheduler_logical_count=1 if scheduler_enabled else 0,
         supervisor_status="RUNNING",
     )
 
@@ -151,40 +152,45 @@ def _execute_scanner_cycle_background():
     global _scan_is_running
     if not _scan_running_lock.acquire(blocking=False):
         print("BACKGROUND SCAN SKIPPED: Concurrent background execution already in progress", flush=True)
-        return
+        return {"status": "busy", "message": "Concurrent background execution already in progress"}
     _scan_is_running = True
     try:
-        from pipeline_lock import exclusive_pipeline_lock
-        with exclusive_pipeline_lock():
-            import time
-            from pipeline_contract import last_closed_boundary
-            # If triggered right on the candle boundary (e.g. :00, :15, :30, :45),
-            # wait for Bybit to finalize and publish the 15m candle.
-            boundary = last_closed_boundary(time.time(), 900)
-            wait_needed = (boundary + 25) - time.time()
-            if 0 < wait_needed <= 35:
-                time.sleep(wait_needed)
+        from pipeline_lock import exclusive_pipeline_lock, PipelineLockContentionError
+        try:
+            with exclusive_pipeline_lock():
+                import time
+                from pipeline_contract import last_closed_boundary
+                # If triggered right on the candle boundary (e.g. :00, :15, :30, :45),
+                # wait for Bybit to finalize and publish the 15m candle.
+                boundary = last_closed_boundary(time.time(), 900)
+                wait_needed = (boundary + 25) - time.time()
+                if 0 < wait_needed <= 35:
+                    time.sleep(wait_needed)
 
-            from scanner_pipeline import run_once
-            from pipeline_store import STATE_DIR, atomic_json
-            from datetime import datetime, timezone
-            print("BACKGROUND SCANNER TRIGGERED", flush=True)
-            status = run_once(quiet=True)
-            attempt = {"status": status, "at": datetime.now(timezone.utc).isoformat()}
-            try:
-                from db_adapter import save_pipeline_last_attempt
-                save_pipeline_last_attempt(attempt)
-            except Exception:
-                pass
-            atomic_json(STATE_DIR / "last_attempt.json", attempt)
-            print("BACKGROUND SCAN COMPLETED:", status, flush=True)
+                from scanner_pipeline import run_once
+                from pipeline_store import STATE_DIR, atomic_json
+                from datetime import datetime, timezone
+                print("BACKGROUND SCANNER TRIGGERED", flush=True)
+                status = run_once(quiet=True)
+                attempt = {"status": status, "at": datetime.now(timezone.utc).isoformat()}
+                try:
+                    from db_adapter import save_pipeline_last_attempt
+                    save_pipeline_last_attempt(attempt)
+                except Exception:
+                    pass
+                atomic_json(STATE_DIR / "last_attempt.json", attempt)
+                print("BACKGROUND SCAN COMPLETED:", status, flush=True)
 
-            # Auto-check closed PnL on Bybit and dispatch exit outcome notifications
-            try:
-                from closed_pnl_tracker import check_and_notify_closed_trades
-                check_and_notify_closed_trades()
-            except Exception as _pnl_err:
-                print(f"[PNL_TRACKER] Check failed: {_pnl_err}", flush=True)
+                # Auto-check closed PnL on Bybit and dispatch exit outcome notifications
+                try:
+                    from closed_pnl_tracker import check_and_notify_closed_trades
+                    check_and_notify_closed_trades()
+                except Exception as _pnl_err:
+                    print(f"[PNL_TRACKER] Check failed: {_pnl_err}", flush=True)
+                return {"status": status}
+        except PipelineLockContentionError as lock_err:
+            print("BACKGROUND SCAN SKIPPED (BUSY):", lock_err, flush=True)
+            return {"status": "busy", "message": str(lock_err)}
     except Exception as exc:
         print("BACKGROUND SCAN FAILED:", exc, flush=True)
         try:
@@ -204,6 +210,7 @@ def _execute_scanner_cycle_background():
                 pass
         except Exception:
             pass
+        return {"status": "failed", "error": str(exc)}
     finally:
         _scan_is_running = False
         _scan_running_lock.release()
@@ -212,12 +219,13 @@ def _execute_scanner_cycle_background():
 @app.api_route("/scanner/trigger", methods=["GET", "POST"])
 def trigger_scanner(background_tasks: BackgroundTasks):
     global _scan_is_running
-    if _scan_is_running:
+    from pipeline_lock import is_pipeline_locked
+    if _scan_is_running or is_pipeline_locked():
         return JSONResponse(
             status_code=200,
             content={
                 "status": "busy",
-                "message": "Scanner cycle is already currently running in background."
+                "message": "Scanner cycle is already currently running in background or another process."
             }
         )
     background_tasks.add_task(_execute_scanner_cycle_background)
@@ -229,7 +237,11 @@ def trigger_scanner(background_tasks: BackgroundTasks):
 
 # Auto-scheduler thread for autonomous 15m closed-candle scan & execution
 def _auto_scheduler_loop():
+    import os
     import time
+    if os.environ.get("TRADINGOS_DISABLE_INNER_SCHEDULER", "").lower() in ("1", "true", "yes"):
+        print("[SCHEDULER] Autonomous 15m scanner loop disabled via environment configuration", flush=True)
+        return
     from scanner_scheduler import next_scan_time
     print("[SCHEDULER] Autonomous 15m scanner loop started", flush=True)
     # Run initial cycle scan on startup after 10s warmup

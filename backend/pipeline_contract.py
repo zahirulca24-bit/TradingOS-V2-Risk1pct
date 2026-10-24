@@ -9,6 +9,7 @@ from collections.abc import Mapping, Sequence
 
 
 CANDLE_SECONDS = 15 * 60
+MIN_RR = 2.0
 
 
 def last_closed_boundary(timestamp: int | float, interval_seconds: int = CANDLE_SECONDS) -> int:

@@ -1,13 +1,14 @@
 """Committed scan-cycle reads and atomic publication; no trading API calls."""
 
 import json
+import math
 import os
 import tempfile
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
-from pipeline_contract import is_complete_cycle
+from pipeline_contract import is_complete_cycle, MIN_RR
 
 BASE = Path(__file__).resolve().parent
 STATE_DIR = BASE / "pipeline_state"
@@ -53,8 +54,21 @@ def validate_reports(reports):
         raise ValueError("Top 10 exceeded")
     if any(row["trend"] not in ("BULLISH", "BEARISH") for row in scanner["results"]):
         raise ValueError("Neutral symbol in active scanner")
-    if any(row["status"] == "PLAN_READY" and row.get("rr", 0) < 1.5 for row in plans["results"]):
-        raise ValueError("Unqualified ready plan")
+    for row in plans["results"]:
+        if row.get("status") == "PLAN_READY":
+            rr = row.get("rr")
+            if rr is None or not isinstance(rr, (int, float)) or math.isnan(rr) or math.isinf(rr) or rr < MIN_RR:
+                raise ValueError(f"Unqualified ready plan for {row.get('symbol')}: RR {rr} < {MIN_RR}")
+            entry = row.get("entry_reference")
+            sl = row.get("sl")
+            tp = row.get("tp")
+            direction = row.get("direction")
+            if any(v is None or not isinstance(v, (int, float)) or math.isnan(v) or math.isinf(v) or v <= 0 for v in (entry, sl, tp)):
+                raise ValueError(f"Invalid price geometry for ready plan {row.get('symbol')}")
+            if direction == "LONG" and not (sl < entry < tp):
+                raise ValueError(f"Invalid LONG geometry for ready plan {row.get('symbol')}: sl={sl}, entry={entry}, tp={tp}")
+            elif direction == "SHORT" and not (tp < entry < sl):
+                raise ValueError(f"Invalid SHORT geometry for ready plan {row.get('symbol')}: tp={tp}, entry={entry}, sl={sl}")
     if any(row.get("trading_enabled") for row in reports.values()):
         raise ValueError("Trading must be disabled")
 

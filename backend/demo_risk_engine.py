@@ -4,16 +4,20 @@ Strictly DRY_RUN_ONLY. Absolutely no order placement, amendment, cancellation, o
 The calculations are dry-run previews; live order sizing requires exchange specification,
 current executable quote, fees, leverage/margin and race-safe open order checks.
 """
+import os
 import time
 import math
 import urllib.request
 import json
-from decimal import Decimal, InvalidOperation, ROUND_DOWN
+from decimal import Decimal, InvalidOperation, ROUND_DOWN, ROUND_HALF_UP
 from datetime import datetime, timezone
+from pathlib import Path
+from typing import Optional, Union, Dict, Any, List
+from pipeline_contract import MIN_RR as CANONICAL_MIN_RR
 
 RISK_FRACTION = Decimal('0.01')
 MAX_OPEN_AND_PENDING = 3
-MIN_RR = Decimal('2.0')
+MIN_RR = Decimal(str(CANONICAL_MIN_RR))
 MAX_PLAN_AGE_SECONDS = 900
 MAX_ACCOUNT_AGE_SECONDS = 120
 DEFAULT_FEE_RATE = Decimal('0.0006')       # 0.06% per leg (0.12% round trip)
@@ -482,3 +486,302 @@ def size_dry_run(plan, equity, *, open_positions, pending_orders, cycle_fresh,
 
     response['reason_messages'] = [REASON_MESSAGES.get(r, r) for r in reasons]
     return response
+
+
+def is_demo_execution_enabled() -> bool:
+    """Check if automated execution on Bybit Demo is enabled."""
+    val = os.getenv("BYBIT_DEMO_EXECUTION_ENABLED", "false").strip().lower()
+    return val in ("true", "1", "yes", "on", "active")
+
+
+def quantize_value(val: Decimal, step: Decimal, rounding=ROUND_DOWN) -> Decimal:
+    """Quantize a decimal value to exact step size."""
+    step_units = (val / step).to_integral_value(rounding=rounding)
+    return step_units * step
+
+
+def format_step_string(val: Decimal, step: Decimal) -> str:
+    """Format decimal to match step string decimals without scientific notation."""
+    step_str = str(step)
+    if "." in step_str:
+        decimals = len(step_str.split(".")[1].rstrip("0"))
+        decimals = max(decimals, len(step_str.split(".")[1]))
+        fmt = f"{{:.{decimals}f}}"
+        return fmt.format(float(val))
+    return str(int(val))
+
+
+def authorize_execution_order(
+    plan: Dict[str, Any],
+    account: Dict[str, Any],
+    specs: Optional[Dict[str, Any]] = None,
+    *,
+    cycle_fresh: bool = True,
+    account_fresh: bool = True,
+    latest_scan_failed: bool = False,
+    db_path: Optional[Union[str, Path]] = None,
+    dsn: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Authoritative execution authorization gate.
+    
+    Evaluates:
+    1. Persistent kill switch (fail-closed if active)
+    2. Execution enabled setting
+    3. Daily risk & circuit breaker (fail-closed if equity unknown/stale/tripped)
+    4. Account validity (fresh verified equity > 0)
+    5. Combined 3-slot capacity (positions + orders + unreconciled DB reservations)
+    6. Mathematical sizing and risk policy (RR >= 2.0, <= 1% risk budget)
+    7. Exchange specs, min notional, step sizes, and available margin
+    8. Quantized SL/TP tick-size alignment
+    
+    Returns structured authorization result. If authorized is False, order MUST NOT be submitted.
+    """
+    from db_adapter import (
+        get_kill_switch_status,
+        evaluate_daily_risk_guard,
+        get_active_slot_reservations,
+    )
+
+    # 1. Kill switch check (strict priority)
+    kill_switch = get_kill_switch_status(dsn=dsn, db_path=db_path)
+    if kill_switch.get("enabled", False) or kill_switch.get("active", False):
+        reason = kill_switch.get("reason") or "KILL_SWITCH_ACTIVE"
+        return {
+            "authorized": False,
+            "status": "BLOCKED_KILL_SWITCH",
+            "reasons": [f"Execution kill switch is active: {reason}"],
+            "quantity": None,
+            "quantized_sl": None,
+            "quantized_tp": None,
+            "risk_budget_usd": None,
+            "estimated_risk_usd": None,
+            "details": {"kill_switch": kill_switch},
+        }
+
+    # 2. Execution enabled setting
+    if not is_demo_execution_enabled():
+        return {
+            "authorized": False,
+            "status": "BLOCKED_EXECUTION_DISABLED",
+            "reasons": ["Order execution is disabled by environment configuration."],
+            "quantity": None,
+            "quantized_sl": None,
+            "quantized_tp": None,
+            "risk_budget_usd": None,
+            "estimated_risk_usd": None,
+            "details": {},
+        }
+
+    # 3. Account equity and status verification
+    if not isinstance(account, dict):
+        return {
+            "authorized": False,
+            "status": "BLOCKED_DATA",
+            "reasons": ["Account data is missing or invalid."],
+            "quantity": None,
+            "quantized_sl": None,
+            "quantized_tp": None,
+            "risk_budget_usd": None,
+            "estimated_risk_usd": None,
+            "details": {},
+        }
+
+    equity = account.get("total_equity")
+    if equity is None or not isinstance(equity, (int, float)) or equity <= 0:
+        return {
+            "authorized": False,
+            "status": "BLOCKED_DATA",
+            "reasons": ["Account equity is missing, zero, or unverified."],
+            "quantity": None,
+            "quantized_sl": None,
+            "quantized_tp": None,
+            "risk_budget_usd": None,
+            "estimated_risk_usd": None,
+            "details": {"equity": equity},
+        }
+
+    if account.get("positions_error") or account.get("orders_error"):
+        return {
+            "authorized": False,
+            "status": "BLOCKED_DATA",
+            "reasons": ["Account open positions or orders are degraded or unverified."],
+            "quantity": None,
+            "quantized_sl": None,
+            "quantized_tp": None,
+            "risk_budget_usd": None,
+            "estimated_risk_usd": None,
+            "details": {"account": account},
+        }
+
+    # 4. Daily risk & circuit breaker guard (fail-closed, with PnL reconciliation audit)
+    daily_guard = evaluate_daily_risk_guard(verify_pnl_reconciliation=True, dsn=dsn, db_path=db_path)
+    if not daily_guard.get("can_trade", False):
+        risk_state = daily_guard.get("risk_state", "BLOCKED_RISK")
+        reason = daily_guard.get("reason", "Daily risk guard blocked trading")
+        return {
+            "authorized": False,
+            "status": "BLOCKED_DAILY_RISK",
+            "reasons": [f"Daily risk guard blocked: {risk_state} ({reason})"],
+            "quantity": None,
+            "quantized_sl": None,
+            "quantized_tp": None,
+            "risk_budget_usd": None,
+            "estimated_risk_usd": None,
+            "details": {"daily_guard": daily_guard},
+        }
+
+    # 5. Combined 3-slot capacity enforcement & position protection audit
+    symbol = plan.get("symbol")
+    open_positions = account.get("open_positions_list") or []
+    if not open_positions and account.get("open_positions"):
+        open_pos_count = account.get("open_positions", 0)
+    else:
+        open_pos_count = len(open_positions)
+
+    # Fail closed if any existing open position lacks verified Stop Loss protection
+    if open_positions:
+        from reconciliation import audit_all_positions_protection
+        prot_audit = audit_all_positions_protection(open_positions)
+        if not prot_audit["all_protected"]:
+            if prot_audit["uncertain_count"] > 0:
+                return {
+                    "authorized": False,
+                    "status": "BLOCKED_API_UNCERTAINTY",
+                    "reasons": ["Open position protection verification failed due to API uncertainty."],
+                    "quantity": None,
+                    "quantized_sl": None,
+                    "quantized_tp": None,
+                    "risk_budget_usd": None,
+                    "estimated_risk_usd": None,
+                    "details": {"protection_audit": prot_audit},
+                }
+            if prot_audit["unprotected_count"] > 0:
+                unprot_syms = [p["symbol"] for p in prot_audit["unprotected_positions"]]
+                return {
+                    "authorized": False,
+                    "status": "BLOCKED_UNPROTECTED_EXPOSURE",
+                    "reasons": [f"Open position on {', '.join(unprot_syms)} has no verified Stop Loss protection."],
+                    "quantity": None,
+                    "quantized_sl": None,
+                    "quantized_tp": None,
+                    "risk_budget_usd": None,
+                    "estimated_risk_usd": None,
+                    "details": {"protection_audit": prot_audit},
+                }
+
+    pending_orders = account.get("pending_orders") or 0
+    if isinstance(pending_orders, list):
+        pending_order_count = len(pending_orders)
+    else:
+        pending_order_count = int(pending_orders)
+
+    # Check active database slot reservations
+    db_slots = get_active_slot_reservations(dsn=dsn, db_path=db_path)
+    unreconciled_db = [
+        r for r in db_slots
+        if r.get("status") in ("RESERVED", "ACTIVE", "HELD_PENDING_RECONCILIATION")
+    ]
+    open_syms = {p.get("symbol") for p in open_positions if isinstance(p, dict)}
+    active_untracked_db_slots = [r for r in unreconciled_db if r.get("symbol") not in open_syms]
+    total_occupied_slots = open_pos_count + pending_order_count + len(active_untracked_db_slots)
+
+    if total_occupied_slots >= MAX_OPEN_AND_PENDING:
+        return {
+            "authorized": False,
+            "status": "BLOCKED_CAPACITY",
+            "reasons": [f"Combined 3-slot capacity reached: {total_occupied_slots}/{MAX_OPEN_AND_PENDING} occupied."],
+            "quantity": None,
+            "quantized_sl": None,
+            "quantized_tp": None,
+            "risk_budget_usd": None,
+            "estimated_risk_usd": None,
+            "details": {
+                "open_positions": open_pos_count,
+                "pending_orders": pending_order_count,
+                "db_reservations": len(active_untracked_db_slots),
+                "total_occupied_slots": total_occupied_slots,
+                "max_slots": MAX_OPEN_AND_PENDING,
+            },
+        }
+
+    # Prevent duplicate pending reservation for same symbol
+    if any(r.get("symbol") == symbol for r in unreconciled_db):
+        return {
+            "authorized": False,
+            "status": "BLOCKED_DUPLICATE",
+            "reasons": [f"Symbol {symbol} already has an active or unreconciled slot reservation."],
+            "quantity": None,
+            "quantized_sl": None,
+            "quantized_tp": None,
+            "risk_budget_usd": None,
+            "estimated_risk_usd": None,
+            "details": {"unreconciled_reservations": [r for r in unreconciled_db if r.get("symbol") == symbol]},
+        }
+
+    # 6. Instrument specifications
+    symbol = plan.get("symbol")
+    if specs is None:
+        specs = get_cached_instrument_specs(symbol)
+    if not specs or not specs.get("qty_step") or not specs.get("min_qty"):
+        return {
+            "authorized": False,
+            "status": "BLOCKED_DATA",
+            "reasons": [f"Instrument specs for {symbol} are missing or unverified."],
+            "quantity": None,
+            "quantized_sl": None,
+            "quantized_tp": None,
+            "risk_budget_usd": None,
+            "estimated_risk_usd": None,
+            "details": {},
+        }
+
+    # 7. Sizing and risk policy validation via size_dry_run
+    available_balance = account.get("available_balance") or 0.0
+    dry_run = size_dry_run(
+        plan,
+        equity,
+        open_positions=open_positions,
+        pending_orders=account.get("pending_orders_list") or [],
+        cycle_fresh=cycle_fresh,
+        account_fresh=account_fresh,
+        latest_scan_failed=latest_scan_failed,
+        qty_step=specs.get("qty_step"),
+        min_qty=specs.get("min_qty"),
+        max_qty=specs.get("max_qty"),
+        min_notional=specs.get("min_notional") or "5",
+        available_balance=available_balance,
+        fee_rate=specs.get("fee_rate", DEFAULT_FEE_RATE),
+        slippage_rate=specs.get("slippage_rate", DEFAULT_SLIPPAGE_RATE),
+    )
+
+    if dry_run.get("status") != "DRY_RUN_VALID":
+        return {
+            "authorized": False,
+            "status": dry_run.get("status", "BLOCKED_RISK"),
+            "reasons": dry_run.get("reason_messages", []),
+            "quantity": None,
+            "quantized_sl": None,
+            "quantized_tp": None,
+            "risk_budget_usd": dry_run.get("risk_budget_usd"),
+            "estimated_risk_usd": dry_run.get("total_conservative_projected_risk_usd"),
+            "details": dry_run,
+        }
+
+    # 8. Align SL and TP to tick size
+    tick_size = Decimal(str(specs.get("tick_size") or "0.01"))
+    d_sl = Decimal(str(plan.get("sl")))
+    d_tp = Decimal(str(plan.get("tp")))
+    quantized_sl = quantize_value(d_sl, tick_size, rounding=ROUND_HALF_UP)
+    quantized_tp = quantize_value(d_tp, tick_size, rounding=ROUND_HALF_UP)
+
+    return {
+        "authorized": True,
+        "status": "AUTHORIZED",
+        "reasons": [],
+        "quantity": dry_run.get("quantity"),
+        "quantized_sl": format_step_string(quantized_sl, tick_size),
+        "quantized_tp": format_step_string(quantized_tp, tick_size),
+        "risk_budget_usd": dry_run.get("risk_budget_usd"),
+        "estimated_risk_usd": dry_run.get("total_conservative_projected_risk_usd"),
+        "details": dry_run,
+    }

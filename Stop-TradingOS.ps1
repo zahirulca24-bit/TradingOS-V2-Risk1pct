@@ -12,7 +12,8 @@
       - Unrelated foreign processes are never touched
 #>
 
-$root = "E:\TradingOS-V2-Risk1pct"
+$root = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
+$rootFolderName = [System.IO.Path]::GetFileName($root)
 $reportsDir = Join-Path $root "update_reports"
 $supervisorLog = Join-Path $reportsDir "supervisor.log"
 $py = Join-Path $root ".venv\Scripts\python.exe"
@@ -33,7 +34,7 @@ Write-Host "==========================================================" -Foregro
 $scanners = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
     $_.Name -match "^(python|pythonw)(\.exe)?$" -and
     $_.CommandLine -match "scanner_scheduler\.py" -and
-    $_.CommandLine -like "*TradingOS-V2-Risk1pct*"
+    ($_.CommandLine -like "*$rootFolderName*" -or $_.CommandLine -like "*TradingOS*")
 })
 foreach ($p in $scanners) {
     Log-Msg "Stopping Scanner Scheduler PID $($p.ProcessId)..." "INFO"
@@ -44,7 +45,7 @@ foreach ($p in $scanners) {
 $bConn = Get-NetTCPConnection -LocalPort 8765 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($bConn) {
     $bProc = Get-CimInstance Win32_Process -Filter "ProcessId = $($bConn.OwningProcess)" -ErrorAction SilentlyContinue
-    if ($bProc -and ($bProc.CommandLine -like "*TradingOS-V2-Risk1pct*" -or $bProc.CommandLine -match "uvicorn\s+main:app")) {
+    if ($bProc -and ($bProc.CommandLine -like "*$rootFolderName*" -or $bProc.CommandLine -like "*TradingOS*" -or $bProc.CommandLine -match "uvicorn\s+main:app")) {
         Log-Msg "Stopping Backend PID $($bProc.ProcessId)..." "INFO"
         Stop-Process -Id $bProc.ProcessId -Force -ErrorAction SilentlyContinue
     } else {
@@ -56,7 +57,7 @@ if ($bConn) {
 $fConn = Get-NetTCPConnection -LocalPort 5200 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($fConn) {
     $fProc = Get-CimInstance Win32_Process -Filter "ProcessId = $($fConn.OwningProcess)" -ErrorAction SilentlyContinue
-    if ($fProc -and ($fProc.CommandLine -like "*TradingOS-V2-Risk1pct*" -or $fProc.CommandLine -match "vite")) {
+    if ($fProc -and ($fProc.CommandLine -like "*$rootFolderName*" -or $fProc.CommandLine -like "*TradingOS*" -or $fProc.CommandLine -match "vite")) {
         Log-Msg "Stopping Frontend PID $($fProc.ProcessId)..." "INFO"
         Stop-Process -Id $fProc.ProcessId -Force -ErrorAction SilentlyContinue
     } else {

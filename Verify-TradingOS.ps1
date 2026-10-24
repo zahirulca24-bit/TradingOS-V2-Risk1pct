@@ -1,6 +1,7 @@
-param([string]$ProjectRoot = "E:\TradingOS-V2-Risk1pct")
+param([string]$ProjectRoot = "")
 $ErrorActionPreference = 'Stop'
-$root = [System.IO.Path]::GetFullPath($ProjectRoot)
+$resolvedRoot = if ($ProjectRoot) { $ProjectRoot } elseif ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
+$root = [System.IO.Path]::GetFullPath($resolvedRoot)
 $py = Join-Path $root '.venv\Scripts\python.exe'
 if (-not (Test-Path $py)) { throw 'Run Setup-TradingOS.ps1 first.' }
 New-Item -ItemType Directory -Force -Path (Join-Path $root 'update_reports') | Out-Null
