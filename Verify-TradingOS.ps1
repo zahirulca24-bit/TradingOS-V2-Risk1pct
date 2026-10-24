@@ -13,6 +13,8 @@ try {
   & $py -m compileall -q backend 2>&1 | Out-File -FilePath $report -Append -Encoding utf8
   if ($LASTEXITCODE -ne 0) { throw 'Python syntax check failed' }
   $env:PYTHONPATH = (Join-Path $root 'backend')
+  $env:TRADINGOS_DISABLE_INNER_SCHEDULER = "1"
+  $env:TRADINGOS_DISABLE_TELEGRAM = "1"
   $testOut = Join-Path $root 'update_reports\unittest-stdout.txt'
   $testErr = Join-Path $root 'update_reports\unittest-stderr.txt'
   $testProcess = Start-Process -FilePath $py -ArgumentList @('-m','unittest','discover','-s','backend','-p','test*.py','-v') -WorkingDirectory $root -Wait -PassThru -NoNewWindow -RedirectStandardOutput $testOut -RedirectStandardError $testErr

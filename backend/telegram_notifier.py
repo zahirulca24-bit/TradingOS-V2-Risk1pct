@@ -37,6 +37,9 @@ def _get_credentials():
 
 def send_telegram_message(text: str, parse_mode: str = "Markdown") -> bool:
     """Send a telegram message safely without raising exceptions to callers."""
+    if os.environ.get("TRADINGOS_DISABLE_TELEGRAM", "").lower() in ("true", "1", "yes"):
+        return True
+
     token, chat_id = _get_credentials()
     if not token or not chat_id:
         return False

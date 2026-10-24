@@ -233,12 +233,13 @@ class TestSharedRiskAuthorization(unittest.TestCase):
 
         with patch.dict(os.environ, {"BYBIT_DEMO_EXECUTION_ENABLED": "true"}):
             with patch("demo_order_executor.get_cached_instrument_specs", return_value=self.valid_specs):
-                executions = execute_demo_plans(
-                    reports,
-                    session=mock_session,
-                    account=self.valid_account,
-                    db_path=self.db_path,
-                )
+                with patch("demo_order_executor.send_telegram_message") as mock_tg:
+                    executions = execute_demo_plans(
+                        reports,
+                        session=mock_session,
+                        account=self.valid_account,
+                        db_path=self.db_path,
+                    )
 
         self.assertEqual(len(executions), 1)
         exec_item = executions[0]
@@ -273,12 +274,13 @@ class TestSharedRiskAuthorization(unittest.TestCase):
 
         with patch.dict(os.environ, {"BYBIT_DEMO_EXECUTION_ENABLED": "true"}):
             with patch("demo_order_executor.get_cached_instrument_specs", return_value=self.valid_specs):
-                executions = execute_demo_plans(
-                    reports,
-                    session=mock_session,
-                    account=self.valid_account,
-                    db_path=self.db_path,
-                )
+                with patch("demo_order_executor.send_telegram_message") as mock_tg:
+                    executions = execute_demo_plans(
+                        reports,
+                        session=mock_session,
+                        account=self.valid_account,
+                        db_path=self.db_path,
+                    )
 
         self.assertEqual(len(executions), 1)
         exec_item = executions[0]
@@ -307,12 +309,13 @@ class TestSharedRiskAuthorization(unittest.TestCase):
 
         with patch.dict(os.environ, {"BYBIT_DEMO_EXECUTION_ENABLED": "true"}):
             with patch("demo_order_executor.get_cached_instrument_specs", return_value=self.valid_specs):
-                executions = execute_demo_plans(
-                    reports,
-                    session=mock_session,
-                    account=self.valid_account,
-                    db_path=self.db_path,
-                )
+                with patch("demo_order_executor.send_telegram_message") as mock_tg:
+                    executions = execute_demo_plans(
+                        reports,
+                        session=mock_session,
+                        account=self.valid_account,
+                        db_path=self.db_path,
+                    )
 
         self.assertEqual(len(executions), 1)
         exec_item = executions[0]
