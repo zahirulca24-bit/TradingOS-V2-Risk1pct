@@ -25,7 +25,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$root = "E:\TradingOS-V2-Risk1pct"
+$root = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
 $py = Join-Path $root ".venv\Scripts\python.exe"
 $backendDir = Join-Path $root "backend"
 $frontendDir = Join-Path $root "frontend"
@@ -155,7 +155,7 @@ function Get-ScannerStatus {
     $all = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
         $_.Name -match "^(python|pythonw)(\.exe)?$" -and
         $_.CommandLine -match "scanner_scheduler\.py" -and
-        $_.CommandLine -like "*TradingOS-V2-Risk1pct*"
+        ($_.CommandLine -like "*$([System.IO.Path]::GetFileName($root))*" -or $_.CommandLine -like "*TradingOS*")
     })
 
     if ($all.Count -eq 0) {

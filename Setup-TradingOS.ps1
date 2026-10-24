@@ -1,7 +1,7 @@
-param([string]$ProjectRoot = 'E:\TradingOS-V2-Full')
+param([string]$ProjectRoot = "")
 $ErrorActionPreference = 'Stop'
-$source = $PSScriptRoot
-$destination = [System.IO.Path]::GetFullPath($ProjectRoot)
+$source = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
+$destination = if ($ProjectRoot) { [System.IO.Path]::GetFullPath($ProjectRoot) } else { [System.IO.Path]::GetFullPath($source) }
 if ([System.IO.Path]::GetFullPath($source).TrimEnd('\') -eq $destination.TrimEnd('\')) {
   Write-Host 'Source folder is already the target; no copy needed.'
 } else {

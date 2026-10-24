@@ -101,3 +101,10 @@ def preview_order_sizing(symbol: str, direction: str = "LONG", entry: Optional[f
         }
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post("/reconcile-positions")
+def reconcile_positions_endpoint():
+    """Trigger on-demand position lifecycle monitoring and slot capacity reconciliation."""
+    from position_monitor import run_position_monitor_iteration
+    return run_position_monitor_iteration()

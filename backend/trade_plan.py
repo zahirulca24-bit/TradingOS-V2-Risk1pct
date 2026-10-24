@@ -1,10 +1,11 @@
+import math
 from datetime import datetime, timezone
 
 from universe_candles import fetch_closed_candles
 from market_structure import detect_trend
 from liquidity_sweep import find_confirmed_levels
+from pipeline_contract import MIN_RR
 
-MIN_RR = 1.5
 SL_BUFFER_PERCENT = 0.001
 CANDLE_SECONDS = 15 * 60
 
@@ -88,6 +89,13 @@ def decision(status, reason, **details):
 def build_trade_plan(candles_1h, candles_15m):
     if len(candles_1h) < 5 or len(candles_15m) < 6:
         return decision("REJECTED", "INSUFFICIENT_DATA")
+
+    # Validate numerical integrity of signal candles
+    for c in (candles_15m[-1], candles_15m[-2]):
+        for k in ("open", "high", "low", "close"):
+            v = c.get(k)
+            if v is None or not isinstance(v, (int, float)) or math.isnan(v) or math.isinf(v):
+                return decision("REJECTED", "INVALID_CANDLE_DATA")
 
     trend = detect_trend(candles_1h)["trend"]
 
@@ -192,6 +200,11 @@ def build_trade_plan(candles_1h, candles_15m):
             **base,
         )
 
+    # Validate numerical precision, finite positive values, and valid geometry
+    for val in (entry, sl, tp, risk, reward):
+        if val is None or not isinstance(val, (int, float)) or math.isnan(val) or math.isinf(val):
+            return decision("REJECTED", "INVALID_RISK_OR_REWARD", **base)
+
     if risk <= 0 or reward <= 0:
         return decision(
             "REJECTED",
@@ -199,20 +212,30 @@ def build_trade_plan(candles_1h, candles_15m):
             **base,
         )
 
+    # Validate directional geometry
+    if direction == "LONG" and not (sl < entry < tp):
+        return decision("REJECTED", "INVALID_RISK_OR_REWARD", **base)
+    elif direction == "SHORT" and not (tp < entry < sl):
+        return decision("REJECTED", "INVALID_RISK_OR_REWARD", **base)
+
     rr = reward / risk
 
-    if rr < MIN_RR:
+    if math.isnan(rr) or math.isinf(rr):
+        return decision("REJECTED", "INVALID_RISK_OR_REWARD", **base)
+
+    rr_rounded = round(rr, 2)
+    if rr_rounded < MIN_RR:
         return decision(
             "REJECTED",
             "RISK_REWARD_TOO_LOW",
-            rr=round(rr, 2),
+            rr=rr_rounded,
             **base,
         )
 
     return decision(
         "PLAN_READY",
         "SWEEP_PATTERN_AND_RR_CONFIRMED",
-        rr=round(rr, 2),
+        rr=rr_rounded,
         **base,
     )
 

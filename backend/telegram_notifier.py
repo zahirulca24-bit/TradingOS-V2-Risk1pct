@@ -16,6 +16,8 @@ import urllib.request
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+from pipeline_contract import MIN_RR
+
 
 def _get_credentials():
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
@@ -176,7 +178,7 @@ def notify_cycle_published(reports: Dict[str, Any]):
     # 2. Dispatch Signal Ready alerts (High Priority)
     if ready_count > 0:
         for plan in plans.get("results", []):
-            if plan.get("status") == "PLAN_READY":
+            if plan.get("status") == "PLAN_READY" and float(plan.get("rr") or 0.0) >= MIN_RR:
                 sym = plan.get("symbol", "")
                 direction = plan.get("direction", "LONG")
                 trend = plan.get("trend", "")
@@ -187,6 +189,18 @@ def notify_cycle_published(reports: Dict[str, Any]):
                 rr = plan.get("rr", 0)
 
                 icon = "🟢" if direction == "LONG" else "🔴"
+
+                try:
+                    from demo_risk_engine import is_demo_execution_enabled
+                    execution_active = is_demo_execution_enabled()
+                except Exception:
+                    execution_active = False
+
+                mode_notice = (
+                    "⚡ *Execution:* Bybit Demo Order Submission ACTIVE"
+                    if execution_active
+                    else "⚠️ *Notice:* Read-Only Research Signal (Demo Execution Disabled)"
+                )
 
                 signal_msg = (
                     f"🎯 *TRADINGOS V2 — TRADE SIGNAL READY* 🎯\n\n"
@@ -199,7 +213,7 @@ def notify_cycle_published(reports: Dict[str, Any]):
                     f"🎯 *Take Profit:* `${tp:,.4f}`\n"
                     f"⚖️ *Risk / Reward:* `1 : {rr:.2f}`\n\n"
                     f"🛡️ *Risk Engine:* 1% Max Account Risk Budget\n"
-                    f"⚠️ *Notice:* Read-Only Research Signal (No execution)"
+                    f"{mode_notice}"
                 )
                 send_telegram_message(signal_msg)
 
@@ -238,5 +252,30 @@ def notify_scan_failed(reason: str):
         f"⏱️ *Time:* `{now_iso}`\n"
         f"❌ *Reason:* `{short_reason}`\n\n"
         f"ℹ️ *Action:* Will retry on the next 15-minute candle close."
+    )
+    send_telegram_message(msg)
+
+
+def notify_kill_switch_activated(reason: str):
+    """Notifies when emergency execution kill switch is triggered."""
+    now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    msg = (
+        f"🚨 *TRADINGOS EMERGENCY ALERT: KILL SWITCH ACTIVATED* 🚨\n\n"
+        f"⏱️ *Time:* `{now_iso}`\n"
+        f"🛑 *Reason:* `{reason}`\n\n"
+        f"🔒 *Status:* All new order placements blocked (Fail-Closed)."
+    )
+    send_telegram_message(msg)
+
+
+def notify_circuit_breaker_tripped(drawdown_pct: float, reason: str):
+    """Notifies when the 3% daily drawdown circuit breaker is tripped."""
+    now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    msg = (
+        f"🛑 *TRADINGOS RISK BREAKER TRIPPED* 🛑\n\n"
+        f"⏱️ *Time:* `{now_iso}`\n"
+        f"📉 *Current Drawdown:* `{drawdown_pct:.2f}%` (Limit: 3.00%)\n"
+        f"⚠️ *Reason:* `{reason}`\n\n"
+        f"🔒 *Action:* Daily circuit breaker ACTIVE. All new entries blocked until daily reset."
     )
     send_telegram_message(msg)

@@ -274,7 +274,7 @@ class TestStorageAdapter(unittest.TestCase):
 
         async def run_checks():
             req = MagicMock(method='GET')
-            req.url.path = '/scanner/cycle'
+            req.url.path = '/demo/account'
             nxt = AsyncMock(return_value='next_called')
 
             # 1. Local environment (RENDER unset) allows access
