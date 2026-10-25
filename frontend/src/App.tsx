@@ -11,12 +11,13 @@ import { apiUrl, setAuthToken } from "./api";
 import ScannerPage from "./OpportunityScannerPage";
 import TradingTerminalPage from "./TradingTerminalPage";
 import SettingsPage from "./SettingsPage";
+import DayTraderAgentsPage from "./DayTraderAgentsPage";
 import { BrowserRouter, NavLink, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, Search, Radio, ChartCandlestick, Blocks,
   Bot, Wallet, BookOpen, FileBarChart, Play, Settings,
   Bell, WifiOff, ArrowUpRight, ArrowDownRight,
-  Activity, ShieldCheck, Clock3, Database, ChevronRight
+  Activity, ShieldCheck, Clock3, Database, ChevronRight, Cpu
 } from "lucide-react";
 import "./App.css";
 
@@ -27,6 +28,7 @@ const navigation = [
   { path: "/terminal", name: "Trading Terminal", icon: ChartCandlestick },
   { path: "/strategy", name: "Strategy Builder", icon: Blocks },
   { path: "/bots", name: "Bot Manager", icon: Bot },
+  { path: "/agents", name: "Day Trader Agents", icon: Cpu },
   { path: "/demo", name: "Demo Trading", icon: Wallet },
   { path: "/journal", name: "Trade Journal", icon: BookOpen },
   { path: "/replay", name: "Replay Lab", icon: Play },
@@ -726,6 +728,7 @@ function AppLayout() {
             <Route path="/terminal" element={<TradingTerminalPage />} />
             <Route path="/strategy" element={<StrategyBuilderPage />} />
             <Route path="/bots" element={<BotManagerPage />} />
+            <Route path="/agents" element={<DayTraderAgentsPage />} />
             <Route path="/demo" element={<DemoTradingPage />} />
             <Route path="/journal" element={<TradeJournalPage initialTab="signals" />} />
             <Route path="/reports" element={<TradeJournalPage initialTab="reports" />} />

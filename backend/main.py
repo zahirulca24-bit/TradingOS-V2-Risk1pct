@@ -42,7 +42,7 @@ async def prevent_anonymous_cloud_data_access(request: Request, call_next):
     on_render = os.environ.get("RENDER", "").lower() in ("true", "1")
     if on_render and request.method != "OPTIONS":
         public_paths = {"/", "/health", "/health/operational", "/scanner/trigger"}
-        public_prefixes = ("/market/", "/auth/", "/scanner/", "/api/execution/", "/journal/", "/api/journal/")
+        public_prefixes = ("/market/", "/auth/", "/scanner/", "/api/execution/", "/journal/", "/api/journal/", "/api/day-trader/")
         path = request.url.path
         if path not in public_paths and not any(path.startswith(p) for p in public_prefixes):
             configured_token = os.environ.get("TRADINGOS_AUTH_TOKEN")
@@ -347,4 +347,8 @@ app.include_router(settings_router)
 # Order execution & live preview router
 from execution_api import router as execution_router
 app.include_router(execution_router)
+
+# Day Trader Autonomous Agents Team Router
+from day_trader_api import router as day_trader_router
+app.include_router(day_trader_router)
 
